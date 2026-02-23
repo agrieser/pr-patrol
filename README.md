@@ -51,7 +51,7 @@ Download a binary from [Releases](https://github.com/agrieser/pr-patrol/releases
 go install github.com/agrieser/pr-patrol@latest
 ```
 
-Requires the [GitHub CLI](https://cli.github.com) (`gh`) to be installed and authenticated (`gh auth login`).
+Requires a `GITHUB_TOKEN` environment variable with `repo` scope. You can create one at [github.com/settings/tokens](https://github.com/settings/tokens).
 
 ## Usage
 
@@ -62,18 +62,22 @@ pr-patrol --org mycompany
 This launches an interactive TUI with colored indicators and keyboard navigation. Use `--plain` for scriptable text output:
 
 ```
-# Count PRs awaiting your review
-pr-patrol --org mycompany --plain | wc -l
-
-# Set your org once
+# Set credentials once
+export GITHUB_TOKEN=ghp_...
 export GITHUB_ORG=mycompany
+
+# Launch TUI
 pr-patrol
+
+# Or use plain text for scripting
+pr-patrol --plain | wc -l
 ```
 
 ### Flags
 
 | Flag | Env Var | Description |
 |------|---------|-------------|
+| | `GITHUB_TOKEN` | GitHub personal access token with `repo` scope (required) |
 | `--org` | `GITHUB_ORG` | GitHub organization (required) |
 | `--plain` | | Plain text output, no TUI |
 | `--self` | | Include your own PRs (excluded by default) |

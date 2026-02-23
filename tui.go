@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -94,12 +95,19 @@ type commentPostedMsg struct {
 
 func postCommentCmd(repo string, number int, body string) tea.Cmd {
 	return func() tea.Msg {
-		c := exec.Command("gh", "pr", "comment",
-			"-R", repo,
-			fmt.Sprintf("%d", number),
-			"--body", body)
-		err := c.Run()
+		err := postComment(repo, number, body)
 		return commentPostedMsg{repo: repo, number: number, err: err}
+	}
+}
+
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "windows":
+		return exec.Command("cmd", "/c", "start", url).Start()
+	default:
+		return exec.Command("xdg-open", url).Start()
 	}
 }
 
@@ -204,10 +212,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if pr, ok := m.selectedPR(); ok {
-				c := exec.Command("gh", "pr", "view", "--web",
-					"-R", pr.RepoFullName,
-					fmt.Sprintf("%d", pr.Number))
-				return m, tea.ExecProcess(c, func(err error) tea.Msg { return nil })
+				_ = openBrowser(pr.URL)
 			}
 		case "a":
 			m.showAuthor = !m.showAuthor

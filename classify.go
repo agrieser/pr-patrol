@@ -126,6 +126,14 @@ func computeActivity(pr PRNode, me string) ActivityIndicator {
 			hasOthers = true
 		}
 	}
+	// Reviews (approve, request changes, comment) also count as activity
+	for _, r := range pr.Reviews.Nodes {
+		if r.Author.Login == me {
+			hasMine = true
+		} else if r.Author.Login != "" {
+			hasOthers = true
+		}
+	}
 	if hasMine {
 		return ActMine
 	}
@@ -136,7 +144,7 @@ func computeActivity(pr PRNode, me string) ActivityIndicator {
 }
 
 func computeAuthorActivity(pr PRNode) ActivityIndicator {
-	if len(pr.Comments.Nodes) == 0 {
+	if len(pr.Comments.Nodes) == 0 && len(pr.Reviews.Nodes) == 0 {
 		return ActNone
 	}
 
@@ -147,6 +155,11 @@ func computeAuthorActivity(pr PRNode) ActivityIndicator {
 
 	for _, c := range pr.Comments.Nodes {
 		if lastCommit.IsZero() || c.CreatedAt.After(lastCommit) {
+			return ActMine
+		}
+	}
+	for _, r := range pr.Reviews.Nodes {
+		if lastCommit.IsZero() || r.SubmittedAt.After(lastCommit) {
 			return ActMine
 		}
 	}

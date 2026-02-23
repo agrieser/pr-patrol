@@ -302,6 +302,28 @@ func TestComputeActivity_BothMineAndOthers(t *testing.T) {
 	}
 }
 
+func TestComputeActivity_ReviewCountsAsActivity(t *testing.T) {
+	pr := makePR(withReview("me", "APPROVED", time.Now()))
+	if got := computeActivity(pr, "me"); got != ActMine {
+		t.Fatalf("expected ActMine (review counts as activity), got %s", got)
+	}
+}
+
+func TestComputeActivity_OthersReviewCountsAsActivity(t *testing.T) {
+	pr := makePR(withReview("alice", "COMMENTED", time.Now()))
+	if got := computeActivity(pr, "me"); got != ActOthers {
+		t.Fatalf("expected ActOthers (others' review counts as activity), got %s", got)
+	}
+}
+
+func TestComputeActivity_ReviewNoComments(t *testing.T) {
+	// PR with only a review (no issue comments) should still show activity
+	pr := makePR(withReview("alice", "CHANGES_REQUESTED", time.Now()))
+	if got := computeActivity(pr, "me"); got != ActOthers {
+		t.Fatalf("expected ActOthers, got %s", got)
+	}
+}
+
 // --- computeAuthorActivity tests ---
 
 func TestComputeAuthorActivity_None(t *testing.T) {

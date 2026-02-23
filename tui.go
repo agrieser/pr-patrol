@@ -169,11 +169,16 @@ func (m *model) reclassify() {
 	m.cols = computeColumns(m.items)
 }
 
+func hideCursorCmd() tea.Msg {
+	return tea.HideCursor()
+}
+
 func (m model) Init() tea.Cmd {
+	cmds := []tea.Cmd{hideCursorCmd}
 	if m.loading {
-		return fetchDataCmd(m.org, m.limit)
+		cmds = append(cmds, fetchDataCmd(m.org, m.limit))
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

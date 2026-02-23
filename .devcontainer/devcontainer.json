@@ -1,0 +1,25 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go .
+{
+	"name": "Go",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/go:2-1.25-trixie",
+
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {
+		"ghcr.io/devcontainers/features/node:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+	},
+
+	// Mount named volumes so Claude and GitHub CLI auth persist across rebuilds
+	// and are shared globally across all devcontainer projects.
+	"mounts": [
+		"source=global-claude-code-config,target=/home/vscode/.claude,type=volume",
+		"source=global-gh-cli-config,target=/home/vscode/.config/gh,type=volume"
+	],
+
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+	}
+}

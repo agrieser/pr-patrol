@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os/exec"
 	"strings"
 
@@ -19,7 +20,27 @@ var (
 
 	selLine   = lipgloss.NewStyle().Bold(true).Reverse(true)
 	helpStyle = lipgloss.NewStyle().Faint(true)
+
+	// Palette of distinguishable ANSI-256 colors for repo/author hashing.
+	namePalette = []lipgloss.Color{
+		"39",  // blue
+		"168", // pink
+		"114", // green
+		"215", // orange
+		"141", // purple
+		"80",  // teal
+		"203", // red
+		"227", // yellow
+		"75",  // sky
+		"183", // lavender
+	}
 )
+
+func nameColor(name string) lipgloss.Style {
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return lipgloss.NewStyle().Foreground(namePalette[h.Sum32()%uint32(len(namePalette))])
+}
 
 type model struct {
 	items     []ClassifiedPR
@@ -248,12 +269,26 @@ func (m model) View() string {
 	for i := start; i < end; i++ {
 		pr := vis[i]
 		indicators := formatIndicators(pr, m.showAuthor)
-		repoCol := fmt.Sprintf("%s#%d", pr.RepoName, pr.Number)
-		line := fmt.Sprintf("%s %-*s  %-*s  %s", indicators, m.cols.repo, repoCol, m.cols.author, pr.Author, pr.Title)
+		repoCol := fmt.Sprintf("%-*s", m.cols.repo, fmt.Sprintf("%s#%d", pr.RepoName, pr.Number))
+		authorCol := fmt.Sprintf("%-*s", m.cols.author, pr.Author)
 
-		if m.width > 0 && len(line) > m.width {
-			line = line[:m.width-1] + "…"
+		// Build plain line for truncation check, then colorized version for display
+		plainLine := fmt.Sprintf("%s %s  %s  %s", "     ", repoCol, authorCol, pr.Title)
+		titleText := pr.Title
+		if m.width > 0 && len(plainLine) > m.width {
+			// Truncate title to fit
+			overhead := len(plainLine) - len(pr.Title)
+			maxTitle := m.width - overhead - 1
+			if maxTitle > 0 && maxTitle < len(pr.Title) {
+				titleText = pr.Title[:maxTitle] + "…"
+			} else if maxTitle <= 0 {
+				titleText = "…"
+			}
 		}
+
+		coloredRepo := nameColor(pr.RepoName).Render(repoCol)
+		coloredAuthor := nameColor(pr.Author).Render(authorCol)
+		line := fmt.Sprintf("%s %s  %s  %s", indicators, coloredRepo, coloredAuthor, titleText)
 
 		if i == m.cursor {
 			line = selLine.Render(line)

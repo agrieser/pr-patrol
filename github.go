@@ -12,6 +12,7 @@ type PRNode struct {
 	Title     string    `json:"title"`
 	URL       string    `json:"url"`
 	Number    int       `json:"number"`
+	IsDraft   bool      `json:"isDraft"`
 	CreatedAt time.Time `json:"createdAt"`
 	Author    struct {
 		Login string `json:"login"`
@@ -29,6 +30,9 @@ type PRNode struct {
 	Commits struct {
 		Nodes []CommitNode `json:"nodes"`
 	} `json:"commits"`
+	ReviewRequests struct {
+		Nodes []ReviewRequestNode `json:"nodes"`
+	} `json:"reviewRequests"`
 }
 
 type ReviewNode struct {
@@ -43,12 +47,21 @@ type CommentNode struct {
 	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type CommitNode struct {
 	Commit struct {
 		CommittedDate time.Time `json:"committedDate"`
 	} `json:"commit"`
+}
+
+type ReviewRequestNode struct {
+	AsCodeOwner       bool `json:"asCodeOwner"`
+	RequestedReviewer struct {
+		Login string `json:"login"`
+		Slug  string `json:"slug"`
+	} `json:"requestedReviewer"`
 }
 
 type searchResult struct {
@@ -78,6 +91,7 @@ const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
         url
         number
         createdAt
+        isDraft
         author { login }
         repository { name nameWithOwner }
         reviews(last: 100) {
@@ -90,6 +104,7 @@ const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
         comments(last: 100) {
           nodes {
             author { login }
+            createdAt
           }
         }
         commits(last: 1) {
@@ -97,10 +112,49 @@ const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
             commit { committedDate }
           }
         }
+        reviewRequests(first: 100) {
+          nodes {
+            asCodeOwner
+            requestedReviewer {
+              ... on User { login }
+              ... on Team { slug }
+            }
+          }
+        }
       }
     }
   }
 }`
+
+func parseUserTeams(data []byte, org string) (map[string]bool, error) {
+	var teams []struct {
+		Slug         string `json:"slug"`
+		Organization struct {
+			Login string `json:"login"`
+		} `json:"organization"`
+	}
+	if err := json.Unmarshal(data, &teams); err != nil {
+		return nil, fmt.Errorf("parsing teams response: %w", err)
+	}
+	result := make(map[string]bool)
+	for _, t := range teams {
+		if t.Organization.Login == org {
+			result[t.Slug] = true
+		}
+	}
+	return result, nil
+}
+
+func fetchUserTeams(org string) (map[string]bool, error) {
+	out, err := exec.Command("gh", "api", "/user/teams", "--paginate").Output()
+	if err != nil {
+		if execErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("gh api /user/teams failed: %s", string(execErr.Stderr))
+		}
+		return nil, fmt.Errorf("gh api /user/teams failed: %w", err)
+	}
+	return parseUserTeams(out, org)
+}
 
 func fetchCurrentUser() (string, error) {
 	out, err := exec.Command("gh", "api", "/user").Output()

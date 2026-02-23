@@ -4,13 +4,20 @@ See every PR waiting for you across an entire GitHub org — without clicking th
 
 pr-patrol fetches all open pull requests in an organization and shows each one with a three-column indicator display: **your review status**, **others' reviews**, and **comment activity**. Repo names and authors are color-coded so you can scan at a glance.
 
-```
-👤 👥 💬
-· ✓ ● sam-treatment-svc#199  orangejenny     SA3-3847: Email notifications MVP
-· ● ○ sam-web-app#165        mhayto          SA3-3797: Fix left nav home icon
-~ · · sam-treatment-svc#190  Robert-Costello  update functions to use currentClientId
-✓ ✓ · sam-iam-svc#72         Robert-Costello  add flag for multi-client
-✗ ● · sam-treatment-svc#195  cws1121          SA3-3792: Update PatientDoseReportController
+```ansi
+[2m👤 👥 💬[0m
+[2m·[0m [32m✓[0m [36m●[0m [35mbilling-svc#342 [0m [32msamantha[0m  Add invoice PDF generation endpoint
+[2m·[0m [33m±[0m [37m○[0m [36mweb-app#891     [0m [33mdanielk [0m  Fix timezone handling in scheduler
+[2m~[0m [2m·[0m [2m·[0m [35mbilling-svc#339 [0m [36mrchen   [0m  Update Stripe webhook handler for new API version
+[32m✓[0m [32m✓[0m [2m·[0m [34mauth-svc#156    [0m [36mrchen   [0m  Add SAML SSO support for enterprise accounts
+[31m✗[0m [33m±[0m [2m·[0m [35mbilling-svc#337 [0m [31mmlopez  [0m  Refactor subscription tier logic
+[2m·[0m [2m·[0m [2m·[0m [36mweb-app#885     [0m [33mjpark   [0m  Dark mode toggle in user preferences
+[2m·[0m [2m·[0m [37m○[0m [34mdeploy-tools#78 [0m [33mdanielk [0m  Add canary deployment support to rollout script
+[32m✓[0m [31m✗[0m [36m●[0m [31mapi-gateway#214 [0m [32msamantha[0m  Rate limiting per API key
+[2m·[0m [32m✓[0m [2m·[0m [36mweb-app#882     [0m [31mmlopez  [0m  Migrate user settings page to React 19
+[2m~[0m [2m·[0m [36m●[0m [34mauth-svc#153    [0m [33mjpark   [0m  Fix session expiry race condition
+[2m·[0m [2m·[0m [2m·[0m [31mdata-pipeline#45[0m [36mrchen   [0m  Add retry logic for failed ETL jobs
+[31m✗[0m [2m·[0m [37m○[0m [36mweb-app#878     [0m [33mdanielk [0m  Accessibility improvements for nav components
 ```
 
 ## Indicator Columns

@@ -15,6 +15,7 @@ func main() {
 	mine := pflag.Bool("mine", false, "Only show PRs where you are a requested reviewer")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
+	demo := pflag.Bool("demo", false, "Show demo data (for screenshots)")
 	pflag.Parse()
 
 	if *org == "" {
@@ -24,6 +25,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error: --org flag or GITHUB_ORG env var is required")
 		pflag.Usage()
 		os.Exit(1)
+	}
+
+	if *demo {
+		renderPlain(os.Stdout, demoData())
+		return
 	}
 
 	if _, err := ghToken(); err != nil {

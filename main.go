@@ -17,6 +17,7 @@ func main() {
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
 	dismissRepos := pflag.StringSlice("dismiss-repos", nil, "Repos to hide (comma-separated)")
+	debug := pflag.Bool("debug", false, "Print debug info for review classification")
 	demo := pflag.Bool("demo", false, "Show demo data (for screenshots)")
 	pflag.Parse()
 
@@ -47,6 +48,10 @@ func main() {
 		}
 	}
 
+	if *debug {
+		*plain = true
+	}
+
 	if *plain {
 		fmt.Fprintf(os.Stderr, "Fetching PRs for %s...\n", *org)
 
@@ -56,10 +61,30 @@ func main() {
 			os.Exit(1)
 		}
 
+		if *debug {
+			fmt.Fprintf(os.Stderr, "debug: authenticated as %q\n", me)
+		}
+
 		prs, err := fetchOpenPRs(*org, *limit)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
+		}
+
+		if *debug {
+			fmt.Fprintf(os.Stderr, "debug: fetched %d PRs\n", len(prs))
+			for _, pr := range prs {
+				fmt.Fprintf(os.Stderr, "debug: %s#%d by %s — %d reviews\n",
+					pr.Repository.Name, pr.Number, pr.Author.Login, len(pr.Reviews.Nodes))
+				for _, r := range pr.Reviews.Nodes {
+					fmt.Fprintf(os.Stderr, "debug:   review by %q state=%q at %s\n",
+						r.Author.Login, r.State, r.SubmittedAt.Format("2006-01-02T15:04:05Z"))
+				}
+				if len(pr.Commits.Nodes) > 0 {
+					fmt.Fprintf(os.Stderr, "debug:   last commit at %s\n",
+						pr.Commits.Nodes[0].Commit.CommittedDate.Format("2006-01-02T15:04:05Z"))
+				}
+			}
 		}
 
 		if *author {

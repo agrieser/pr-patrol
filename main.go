@@ -11,8 +11,8 @@ import (
 func main() {
 	org := pflag.String("org", "", "GitHub organization (or set GITHUB_ORG)")
 	plain := pflag.Bool("plain", false, "Plain text output (no TUI)")
-	self := pflag.Bool("show-self", false, "Include self-authored PRs")
-	mine := pflag.Bool("mine", false, "Only show PRs where you are a requested reviewer")
+	self := pflag.Bool("authored", false, "Include PRs you authored")
+	mine := pflag.Bool("assigned", false, "Only show PRs assigned to you for review")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
 	demo := pflag.Bool("demo", false, "Show demo data (for screenshots)")
@@ -87,8 +87,8 @@ func main() {
 		loading:    true,
 		org:        *org,
 		limit:      *limit,
-		showSelf:   *self,
-		showMine:   *mine,
+		showAuthored:   *self,
+		showAssigned:   *mine,
 		showAuthor: *author,
 	}), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

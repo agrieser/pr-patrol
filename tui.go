@@ -19,7 +19,7 @@ var (
 	styleDim    = lipgloss.NewStyle().Faint(true)
 	styleWhite  = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 
-	selLine   = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("238"))
+	selBg     = lipgloss.NewStyle().Background(lipgloss.Color("238"))
 	helpStyle = lipgloss.NewStyle().Faint(true)
 
 	// Palette of distinguishable ANSI-256 colors for repo/author hashing.
@@ -44,9 +44,10 @@ func nameColor(name string) lipgloss.Style {
 }
 
 type model struct {
-	items     []ClassifiedPR
-	cursor    int
-	dismissed map[string]bool
+	items        []ClassifiedPR
+	cursor       int
+	dismissed    map[string]bool
+	dismissedRepos map[string]bool
 	cols      colWidths
 	width     int
 	height    int
@@ -55,8 +56,8 @@ type model struct {
 	me      string
 	myTeams map[string]bool
 
-	showSelf   bool
-	showMine   bool
+	showAuthored   bool
+	showAssigned   bool
 	showAuthor bool
 	sortMode   SortMode
 
@@ -72,8 +73,8 @@ type modelConfig struct {
 	rawPRs     []PRNode
 	me         string
 	myTeams    map[string]bool
-	showSelf   bool
-	showMine   bool
+	showAuthored   bool
+	showAssigned   bool
 	showAuthor bool
 	sortMode   SortMode
 	loading    bool
@@ -135,12 +136,13 @@ func fetchDataCmd(org string, limit int) tea.Cmd {
 
 func newModel(cfg modelConfig) model {
 	m := model{
-		dismissed:  make(map[string]bool),
+		dismissed:      make(map[string]bool),
+		dismissedRepos: make(map[string]bool),
 		rawPRs:     cfg.rawPRs,
 		me:         cfg.me,
 		myTeams:    cfg.myTeams,
-		showSelf:   cfg.showSelf,
-		showMine:   cfg.showMine,
+		showAuthored:   cfg.showAuthored,
+		showAssigned:   cfg.showAssigned,
 		showAuthor: cfg.showAuthor,
 		sortMode:   cfg.sortMode,
 		loading:    cfg.loading,
@@ -158,13 +160,13 @@ func (m *model) reclassify() {
 		m.items = classifyAllAuthor(m.rawPRs, m.me, m.sortMode)
 	} else {
 		var filter func(PRNode) bool
-		if m.showMine {
+		if m.showAssigned {
 			me, teams := m.me, m.myTeams
 			filter = func(pr PRNode) bool {
 				return isRequestedReviewer(pr, me, teams)
 			}
 		}
-		m.items = classifyAll(m.rawPRs, m.me, m.showSelf, filter, m.sortMode)
+		m.items = classifyAll(m.rawPRs, m.me, m.showAuthored, filter, m.sortMode)
 	}
 	m.cols = computeColumns(m.items)
 }
@@ -227,13 +229,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		case "s":
 			if !m.showAuthor {
-				m.showSelf = !m.showSelf
+				m.showAuthored = !m.showAuthored
 				m.reclassify()
 				m.cursor = 0
 			}
-		case "m":
+		case "f":
 			if !m.showAuthor {
-				m.showMine = !m.showMine
+				m.showAssigned = !m.showAssigned
 				m.reclassify()
 				m.cursor = 0
 			}
@@ -257,6 +259,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				vis := m.visibleItems()
 				if m.cursor >= len(vis) && m.cursor > 0 {
 					m.cursor--
+				}
+			}
+		case "D":
+			if pr, ok := m.selectedPR(); ok {
+				m.dismissedRepos[pr.RepoName] = true
+				m.statusMsg = fmt.Sprintf("Dismissed repo %s", pr.RepoName)
+				vis := m.visibleItems()
+				if m.cursor >= len(vis) && m.cursor > 0 {
+					m.cursor = len(vis) - 1
 				}
 			}
 		case "c":
@@ -293,7 +304,7 @@ func (m model) View() string {
 		if m.showAuthor {
 			return "No open PRs authored by you. Press a to switch to reviewer mode.\n"
 		}
-		return "No PRs match current filters. Press s/m to adjust, or a for author mode.\n"
+		return "No PRs match current filters. Press s/f to adjust, or a for author mode.\n"
 	}
 
 	var b strings.Builder
@@ -322,7 +333,13 @@ func (m model) View() string {
 
 	for i := start; i < end; i++ {
 		pr := vis[i]
-		indicators := formatIndicators(pr, m.showAuthor)
+		selected := i == m.cursor
+		var bg *lipgloss.Style
+		if selected {
+			bg = &selBg
+		}
+
+		indicators := formatIndicators(pr, m.showAuthor, bg)
 		repoCol := fmt.Sprintf("%-*s", m.cols.repo, fmt.Sprintf("%s#%d", pr.RepoName, pr.Number))
 		authorCol := fmt.Sprintf("%-*s", m.cols.author, pr.Author)
 
@@ -340,16 +357,24 @@ func (m model) View() string {
 			}
 		}
 
-		coloredRepo := nameColor(pr.RepoName).Render(repoCol)
-		coloredAuthor := nameColor(pr.Author).Render(authorCol)
-		line := fmt.Sprintf("%s %s  %s  %s", indicators, coloredRepo, coloredAuthor, titleText)
-
-		if i == m.cursor {
-			style := selLine
+		var coloredRepo, coloredAuthor, line string
+		if selected {
+			coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
+			coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
+			sep := selBg.Render("  ")
+			titleRendered := selBg.Render(titleText)
+			line = indicators + selBg.Render(" ") + coloredRepo + sep + coloredAuthor + sep + titleRendered
+			// Pad to full width
 			if m.width > 0 {
-				style = style.Width(m.width)
+				lineLen := lipgloss.Width(line)
+				if lineLen < m.width {
+					line += selBg.Render(strings.Repeat(" ", m.width-lineLen))
+				}
 			}
-			line = style.Render(line)
+		} else {
+			coloredRepo = nameColor(pr.RepoName).Render(repoCol)
+			coloredAuthor = nameColor(pr.Author).Render(authorCol)
+			line = fmt.Sprintf("%s %s  %s  %s", indicators, coloredRepo, coloredAuthor, titleText)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -368,21 +393,21 @@ func (m model) View() string {
 	var help string
 	if m.showAuthor {
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			"j/k: navigate  enter: open  d/D: dismiss PR/repo  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
 			sortLabel, authorLabel,
 		))
 	} else {
-		selfLabel := "self:off"
-		if m.showSelf {
-			selfLabel = "self:on"
+		authoredLabel := "authored:off"
+		if m.showAuthored {
+			authoredLabel = "authored:on"
 		}
-		mineLabel := "mine:off"
-		if m.showMine {
-			mineLabel = "mine:on"
+		assignedLabel := "assigned:off"
+		if m.showAssigned {
+			assignedLabel = "assigned:on"
 		}
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  c: @claude  s: %s  m: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
-			selfLabel, mineLabel, sortLabel, authorLabel,
+			"j/k: navigate  enter: open  d/D: dismiss PR/repo  c: @claude  s: %s  f: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			authoredLabel, assignedLabel, sortLabel, authorLabel,
 		))
 	}
 	if m.statusMsg != "" {
@@ -422,9 +447,10 @@ func (m model) renderLegend() string {
 func (m model) visibleItems() []ClassifiedPR {
 	var vis []ClassifiedPR
 	for _, pr := range m.items {
-		if !m.dismissed[pr.URL] {
-			vis = append(vis, pr)
+		if m.dismissed[pr.URL] || m.dismissedRepos[pr.RepoName] {
+			continue
 		}
+		vis = append(vis, pr)
 	}
 	return vis
 }
@@ -437,53 +463,64 @@ func (m model) selectedPR() (ClassifiedPR, bool) {
 	return vis[m.cursor], true
 }
 
-func formatIndicators(pr ClassifiedPR, authorMode bool) string {
+func withBg(s lipgloss.Style, bg *lipgloss.Style) lipgloss.Style {
+	if bg != nil {
+		return s.Inherit(*bg)
+	}
+	return s
+}
+
+func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) string {
 	var col1, col2, col3 string
 
 	if authorMode {
 		if pr.IsDraft {
-			col1 = styleDim.Render("○")
+			col1 = withBg(styleDim, bg).Render("○")
 		} else {
-			col1 = styleWhite.Render("●")
+			col1 = withBg(styleWhite, bg).Render("●")
 		}
 	} else {
 		switch pr.MyReview {
 		case MyNone:
-			col1 = styleDim.Render("·")
+			col1 = withBg(styleDim, bg).Render("·")
 		case MyApproved:
-			col1 = styleGreen.Render("✓")
+			col1 = withBg(styleGreen, bg).Render("✓")
 		case MyChanges:
-			col1 = styleRed.Render("✗")
+			col1 = withBg(styleRed, bg).Render("✗")
 		case MyStale:
-			col1 = styleDim.Render("~")
+			col1 = withBg(styleDim, bg).Render("~")
 		default:
-			col1 = styleDim.Render("·")
+			col1 = withBg(styleDim, bg).Render("·")
 		}
 	}
 
 	switch pr.OthReview {
 	case OthNone:
-		col2 = styleDim.Render("·")
+		col2 = withBg(styleDim, bg).Render("·")
 	case OthApproved:
-		col2 = styleGreen.Render("✓")
+		col2 = withBg(styleGreen, bg).Render("✓")
 	case OthChanges:
-		col2 = styleRed.Render("✗")
+		col2 = withBg(styleRed, bg).Render("✗")
 	case OthMixed:
-		col2 = styleYellow.Render("±")
+		col2 = withBg(styleYellow, bg).Render("±")
 	default:
-		col2 = styleDim.Render("·")
+		col2 = withBg(styleDim, bg).Render("·")
 	}
 
 	switch pr.Activity {
 	case ActNone:
-		col3 = styleDim.Render("·")
+		col3 = withBg(styleDim, bg).Render("·")
 	case ActOthers:
-		col3 = styleWhite.Render("○")
+		col3 = withBg(styleWhite, bg).Render("○")
 	case ActMine:
-		col3 = styleCyan.Render("●")
+		col3 = withBg(styleCyan, bg).Render("●")
 	default:
-		col3 = styleDim.Render("·")
+		col3 = withBg(styleDim, bg).Render("·")
 	}
 
-	return col1 + " " + col2 + " " + col3
+	sep := " "
+	if bg != nil {
+		sep = bg.Render(" ")
+	}
+	return col1 + sep + col2 + sep + col3
 }

@@ -98,8 +98,8 @@ pr-patrol --plain | wc -l
 | | `GITHUB_TOKEN` | GitHub personal access token with `repo` scope (required) |
 | `--org` | `GITHUB_ORG` | GitHub organization (required) |
 | `--plain` | | Plain text output, no TUI |
-| `--show-self` | | Include your own PRs (excluded by default) |
-| `--mine` | | Only show PRs where you are a requested reviewer |
+| `--authored` | | Include PRs you authored (excluded by default) |
+| `--assigned` | | Only show PRs assigned to you for review |
 | `--author` | | Show your own PRs and their review status |
 | `--limit` | | Maximum PRs to fetch (default 500) |
 
@@ -110,9 +110,10 @@ pr-patrol --plain | wc -l
 | `j` / `k` / `↑` / `↓` | Navigate |
 | `Enter` | Open PR in browser |
 | `d` | Dismiss PR (session only) |
+| `D` | Dismiss entire repo (session only) |
 | `c` | Comment `@claude please review this PR` |
-| `s` | Toggle showing self-authored PRs |
-| `m` | Toggle filtering to requested-reviewer PRs |
+| `s` | Toggle showing PRs you authored |
+| `f` | Toggle filtering to PRs assigned to you for review |
 | `o` | Toggle sort order (priority / date) |
 | `a` | Toggle author mode (see your PRs' review status) |
 | `r` | Refresh data |

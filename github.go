@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 type PRNode struct {
 	Title     string    `json:"title"`
 	URL       string    `json:"url"`
@@ -153,7 +155,7 @@ func ghRequest(method, url string, body io.Reader) ([]byte, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -164,8 +166,18 @@ func ghRequest(method, url string, body io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
+	if resp.StatusCode == 401 {
+		return nil, fmt.Errorf("authentication failed (HTTP 401): is your GITHUB_TOKEN valid?")
+	}
+	if resp.StatusCode == 403 || resp.StatusCode == 429 {
+		return nil, fmt.Errorf("rate limited by GitHub (HTTP %d): wait a minute and try again", resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(data))
+		msg := string(data)
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, msg)
 	}
 
 	return data, nil
@@ -191,7 +203,7 @@ func ghRequestPaginated(url string) ([]byte, error) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/vnd.github+json")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("HTTP request failed: %w", err)
 		}
@@ -201,8 +213,18 @@ func ghRequestPaginated(url string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading response: %w", err)
 		}
+		if resp.StatusCode == 401 {
+			return nil, fmt.Errorf("authentication failed (HTTP 401): is your GITHUB_TOKEN valid?")
+		}
+		if resp.StatusCode == 403 || resp.StatusCode == 429 {
+			return nil, fmt.Errorf("rate limited by GitHub (HTTP %d): wait a minute and try again", resp.StatusCode)
+		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(data))
+			msg := string(data)
+			if len(msg) > 200 {
+				msg = msg[:200] + "..."
+			}
+			return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, msg)
 		}
 
 		var page []json.RawMessage

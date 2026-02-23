@@ -45,7 +45,18 @@ Press `?` in the TUI to see this legend at any time.
 
 ## Install
 
-Download a binary from [Releases](https://github.com/agrieser/pr-patrol/releases), or build from source:
+### Download binary
+
+Download from [Releases](https://github.com/agrieser/pr-patrol/releases).
+
+On macOS, remove the quarantine flag before running:
+
+```
+xattr -d com.apple.quarantine ./pr-patrol-darwin-arm64
+chmod +x ./pr-patrol-darwin-arm64
+```
+
+### Build from source
 
 ```
 go install github.com/agrieser/pr-patrol@latest

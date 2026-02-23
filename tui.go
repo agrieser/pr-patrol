@@ -263,7 +263,11 @@ func (m model) View() string {
 		return "Fetching PRs...\n"
 	}
 	if m.errMsg != "" {
-		return fmt.Sprintf("Error: %s\nPress r to retry, q to quit.\n", m.errMsg)
+		msg := strings.ReplaceAll(m.errMsg, "\n", " ")
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+		return fmt.Sprintf("Error: %s\n\nPress r to retry, q to quit.\n", msg)
 	}
 
 	if m.showHelp {

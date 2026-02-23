@@ -19,7 +19,7 @@ var (
 	styleDim    = lipgloss.NewStyle().Faint(true)
 	styleWhite  = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 
-	selLine   = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236"))
+	selLine   = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("238"))
 	helpStyle = lipgloss.NewStyle().Faint(true)
 
 	// Palette of distinguishable ANSI-256 colors for repo/author hashing.
@@ -345,7 +345,11 @@ func (m model) View() string {
 		line := fmt.Sprintf("%s %s  %s  %s", indicators, coloredRepo, coloredAuthor, titleText)
 
 		if i == m.cursor {
-			line = selLine.Render(line)
+			style := selLine
+			if m.width > 0 {
+				style = style.Width(m.width)
+			}
+			line = style.Render(line)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")

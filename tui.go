@@ -19,7 +19,7 @@ var (
 	styleDim    = lipgloss.NewStyle().Faint(true)
 	styleWhite  = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 
-	selLine   = lipgloss.NewStyle().Bold(true).Reverse(true)
+	selLine   = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236"))
 	helpStyle = lipgloss.NewStyle().Faint(true)
 
 	// Palette of distinguishable ANSI-256 colors for repo/author hashing.
@@ -169,12 +169,8 @@ func (m *model) reclassify() {
 	m.cols = computeColumns(m.items)
 }
 
-func hideCursorCmd() tea.Msg {
-	return tea.HideCursor()
-}
-
 func (m model) Init() tea.Cmd {
-	cmds := []tea.Cmd{hideCursorCmd}
+	cmds := []tea.Cmd{tea.HideCursor}
 	if m.loading {
 		cmds = append(cmds, fetchDataCmd(m.org, m.limit))
 	}
@@ -276,34 +272,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-const hideCursor = "\033[?25l"
-
 func (m model) View() string {
 	if m.loading {
-		return hideCursor + "Fetching PRs...\n"
+		return "Fetching PRs...\n"
 	}
 	if m.errMsg != "" {
 		msg := strings.ReplaceAll(m.errMsg, "\n", " ")
 		if len(msg) > 200 {
 			msg = msg[:200] + "..."
 		}
-		return hideCursor + fmt.Sprintf("Error: %s\n\nPress r to retry, q to quit.\n", msg)
+		return fmt.Sprintf("Error: %s\n\nPress r to retry, q to quit.\n", msg)
 	}
 
 	if m.showHelp {
-		return hideCursor + m.renderLegend()
+		return m.renderLegend()
 	}
 
 	vis := m.visibleItems()
 	if len(vis) == 0 {
 		if m.showAuthor {
-			return hideCursor + "No open PRs authored by you. Press a to switch to reviewer mode.\n"
+			return "No open PRs authored by you. Press a to switch to reviewer mode.\n"
 		}
-		return hideCursor + "No PRs match current filters. Press s/m to adjust, or a for author mode.\n"
+		return "No PRs match current filters. Press s/m to adjust, or a for author mode.\n"
 	}
 
 	var b strings.Builder
-	b.WriteString(hideCursor)
 	maxLines := m.height - 3 // reserve for header + help bar
 	if maxLines <= 0 {
 		maxLines = len(vis)

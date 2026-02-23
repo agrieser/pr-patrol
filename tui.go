@@ -167,11 +167,10 @@ func (m *model) reclassify() {
 }
 
 func (m model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.HideCursor}
 	if m.loading {
-		cmds = append(cmds, fetchDataCmd(m.org, m.limit))
+		return fetchDataCmd(m.org, m.limit)
 	}
-	return tea.Batch(cmds...)
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -261,31 +260,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+const hideCursor = "\033[?25l"
+
 func (m model) View() string {
 	if m.loading {
-		return "Fetching PRs...\n"
+		return hideCursor + "Fetching PRs...\n"
 	}
 	if m.errMsg != "" {
 		msg := strings.ReplaceAll(m.errMsg, "\n", " ")
 		if len(msg) > 200 {
 			msg = msg[:200] + "..."
 		}
-		return fmt.Sprintf("Error: %s\n\nPress r to retry, q to quit.\n", msg)
+		return hideCursor + fmt.Sprintf("Error: %s\n\nPress r to retry, q to quit.\n", msg)
 	}
 
 	if m.showHelp {
-		return m.renderLegend()
+		return hideCursor + m.renderLegend()
 	}
 
 	vis := m.visibleItems()
 	if len(vis) == 0 {
 		if m.showAuthor {
-			return "No open PRs authored by you. Press a to switch to reviewer mode.\n"
+			return hideCursor + "No open PRs authored by you. Press a to switch to reviewer mode.\n"
 		}
-		return "No PRs match current filters. Press s/m to adjust, or a for author mode.\n"
+		return hideCursor + "No PRs match current filters. Press s/m to adjust, or a for author mode.\n"
 	}
 
 	var b strings.Builder
+	b.WriteString(hideCursor)
 	maxLines := m.height - 3 // reserve for header + help bar
 	if maxLines <= 0 {
 		maxLines = len(vis)

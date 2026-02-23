@@ -94,6 +94,7 @@ pr-patrol --plain | wc -l
 | `--self` | | Include your own PRs (excluded by default) |
 | `--mine` | | Only show PRs where you are a requested reviewer |
 | `--author` | | Show your own PRs and their review status |
+| `--limit` | | Maximum PRs to fetch (default 500) |
 
 ### TUI Keys
 

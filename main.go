@@ -14,6 +14,7 @@ func main() {
 	self := pflag.Bool("self", false, "Include self-authored PRs")
 	mine := pflag.Bool("mine", false, "Only show PRs where you are a requested reviewer")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
+	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
 	pflag.Parse()
 
 	if *org == "" {
@@ -39,7 +40,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		prs, err := fetchOpenPRs(*org)
+		prs, err := fetchOpenPRs(*org, *limit)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -79,6 +80,7 @@ func main() {
 	p := tea.NewProgram(newModel(modelConfig{
 		loading:    true,
 		org:        *org,
+		limit:      *limit,
 		showSelf:   *self,
 		showMine:   *mine,
 		showAuthor: *author,

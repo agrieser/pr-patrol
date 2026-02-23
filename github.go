@@ -296,9 +296,9 @@ func postComment(repo string, number int, body string) error {
 	return err
 }
 
-func fetchOpenPRs(org string) ([]PRNode, error) {
+func fetchOpenPRs(org string, limit int) ([]PRNode, error) {
 	var allPRs []PRNode
-	searchQuery := fmt.Sprintf("is:pr is:open org:%s", org)
+	searchQuery := fmt.Sprintf("is:pr is:open sort:updated org:%s", org)
 	var cursor *string
 
 	for {
@@ -329,6 +329,11 @@ func fetchOpenPRs(org string) ([]PRNode, error) {
 				continue // skip non-PR nodes
 			}
 			allPRs = append(allPRs, node)
+		}
+
+		if limit > 0 && len(allPRs) >= limit {
+			allPRs = allPRs[:limit]
+			break
 		}
 
 		if !result.Data.Search.PageInfo.HasNextPage {

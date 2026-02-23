@@ -61,6 +61,7 @@ type model struct {
 
 	loading   bool
 	org       string
+	limit     int
 	errMsg    string
 	showHelp  bool
 	statusMsg string
@@ -75,6 +76,7 @@ type modelConfig struct {
 	showAuthor bool
 	loading    bool
 	org        string
+	limit      int
 }
 
 type dataLoadedMsg struct {
@@ -111,13 +113,13 @@ func openBrowser(url string) error {
 	}
 }
 
-func fetchDataCmd(org string) tea.Cmd {
+func fetchDataCmd(org string, limit int) tea.Cmd {
 	return func() tea.Msg {
 		me, err := fetchCurrentUser()
 		if err != nil {
 			return fetchErrMsg{err}
 		}
-		prs, err := fetchOpenPRs(org)
+		prs, err := fetchOpenPRs(org, limit)
 		if err != nil {
 			return fetchErrMsg{err}
 		}
@@ -140,6 +142,7 @@ func newModel(cfg modelConfig) model {
 		showAuthor: cfg.showAuthor,
 		loading:    cfg.loading,
 		org:        cfg.org,
+		limit:      cfg.limit,
 	}
 	if !m.loading {
 		m.reclassify()
@@ -166,7 +169,7 @@ func (m *model) reclassify() {
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.HideCursor}
 	if m.loading {
-		cmds = append(cmds, fetchDataCmd(m.org))
+		cmds = append(cmds, fetchDataCmd(m.org, m.limit))
 	}
 	return tea.Batch(cmds...)
 }
@@ -235,7 +238,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.org != "" {
 				m.loading = true
 				m.errMsg = ""
-				return m, fetchDataCmd(m.org)
+				return m, fetchDataCmd(m.org, m.limit)
 			}
 		case "d":
 			if pr, ok := m.selectedPR(); ok {

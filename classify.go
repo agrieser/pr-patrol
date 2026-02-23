@@ -14,7 +14,40 @@ const (
 	StateStale     ReviewState = "STL"
 )
 
+type MyReviewIndicator string
+
+const (
+	MyNone     MyReviewIndicator = "none"
+	MyApproved MyReviewIndicator = "approved"
+	MyChanges  MyReviewIndicator = "changes"
+	MyStale    MyReviewIndicator = "stale"
+)
+
+type OthReviewIndicator string
+
+const (
+	OthNone     OthReviewIndicator = "none"
+	OthApproved OthReviewIndicator = "approved"
+	OthChanges  OthReviewIndicator = "changes"
+	OthMixed    OthReviewIndicator = "mixed"
+)
+
+type ActivityIndicator string
+
+const (
+	ActNone   ActivityIndicator = "none"
+	ActOthers ActivityIndicator = "others"
+	ActMine   ActivityIndicator = "mine"
+)
+
 type ClassifiedPR struct {
+	// Indicators (new)
+	MyReview  MyReviewIndicator
+	OthReview OthReviewIndicator
+	Activity  ActivityIndicator
+	IsDraft   bool
+
+	// Existing fields
 	State        ReviewState
 	RepoName     string
 	RepoFullName string
@@ -81,10 +114,25 @@ func classify(pr PRNode, me string) (ReviewState, bool) {
 	return "", false
 }
 
-func classifyAll(prs []PRNode, me string, includeSelf bool) []ClassifiedPR {
+func isRequestedReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
+	for _, rr := range pr.ReviewRequests.Nodes {
+		if rr.RequestedReviewer.Login == me {
+			return true
+		}
+		if rr.RequestedReviewer.Slug != "" && myTeams[rr.RequestedReviewer.Slug] {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyAll(prs []PRNode, me string, includeSelf bool, filter func(PRNode) bool) []ClassifiedPR {
 	var result []ClassifiedPR
 	for _, pr := range prs {
 		if !includeSelf && pr.Author.Login == me {
+			continue
+		}
+		if filter != nil && !filter(pr) {
 			continue
 		}
 		state, include := classify(pr, me)

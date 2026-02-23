@@ -53,6 +53,15 @@ func withLastCommit(at time.Time) func(*PRNode) {
 	}
 }
 
+func withReviewRequest(login, teamSlug string, asCodeOwner bool) func(*PRNode) {
+	return func(pr *PRNode) {
+		rr := ReviewRequestNode{AsCodeOwner: asCodeOwner}
+		rr.RequestedReviewer.Login = login
+		rr.RequestedReviewer.Slug = teamSlug
+		pr.ReviewRequests.Nodes = append(pr.ReviewRequests.Nodes, rr)
+	}
+}
+
 func TestClassify_New(t *testing.T) {
 	pr := makePR()
 	state, include := classify(pr, "me")
@@ -159,12 +168,49 @@ func TestClassify_DeletedAuthor(t *testing.T) {
 	}
 }
 
+func TestIsRequestedReviewer_DirectUser(t *testing.T) {
+	pr := makePR(withReviewRequest("me", "", false))
+	if !isRequestedReviewer(pr, "me", nil) {
+		t.Fatal("expected true for direct user match")
+	}
+}
+
+func TestIsRequestedReviewer_TeamMember(t *testing.T) {
+	pr := makePR(withReviewRequest("", "backend-team", true))
+	myTeams := map[string]bool{"backend-team": true}
+	if !isRequestedReviewer(pr, "me", myTeams) {
+		t.Fatal("expected true for team membership match")
+	}
+}
+
+func TestIsRequestedReviewer_TeamNonMember(t *testing.T) {
+	pr := makePR(withReviewRequest("", "frontend-team", true))
+	myTeams := map[string]bool{"backend-team": true}
+	if isRequestedReviewer(pr, "me", myTeams) {
+		t.Fatal("expected false for non-member team")
+	}
+}
+
+func TestIsRequestedReviewer_NoRequests(t *testing.T) {
+	pr := makePR()
+	if isRequestedReviewer(pr, "me", nil) {
+		t.Fatal("expected false for no review requests")
+	}
+}
+
+func TestIsRequestedReviewer_OtherUser(t *testing.T) {
+	pr := makePR(withReviewRequest("someone-else", "", false))
+	if isRequestedReviewer(pr, "me", nil) {
+		t.Fatal("expected false for different user")
+	}
+}
+
 func TestClassifyAll_ExcludesSelf(t *testing.T) {
 	prs := []PRNode{
 		makePR(withAuthor("me")),
 		makePR(withAuthor("other")),
 	}
-	result := classifyAll(prs, "me", false)
+	result := classifyAll(prs, "me", false, nil)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR (self excluded), got %d", len(result))
 	}
@@ -178,7 +224,7 @@ func TestClassifyAll_IncludesSelf(t *testing.T) {
 		makePR(withAuthor("me")),
 		makePR(withAuthor("other")),
 	}
-	result := classifyAll(prs, "me", true)
+	result := classifyAll(prs, "me", true, nil)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs (self included), got %d", len(result))
 	}
@@ -196,7 +242,7 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 		makePR(), // NEW
 		makePR(withComment("me")), // CMT
 	}
-	result := classifyAll(prs, "me", false)
+	result := classifyAll(prs, "me", false, nil)
 	if len(result) != 3 {
 		t.Fatalf("expected 3, got %d", len(result))
 	}
@@ -208,5 +254,55 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 	}
 	if result[2].State != StateStale {
 		t.Fatalf("expected STL third, got %s", result[2].State)
+	}
+}
+
+func TestClassifyAll_WithFilter(t *testing.T) {
+	prs := []PRNode{
+		makePR(withReviewRequest("me", "", false)),
+		makePR(), // no review request for me
+	}
+	filter := func(pr PRNode) bool {
+		return isRequestedReviewer(pr, "me", nil)
+	}
+	result := classifyAll(prs, "me", false, filter)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 PR (filtered), got %d", len(result))
+	}
+}
+
+func TestClassifiedPR_HasIndicatorFields(t *testing.T) {
+	pr := ClassifiedPR{
+		MyReview:  MyApproved,
+		OthReview: OthMixed,
+		Activity:  ActMine,
+		IsDraft:   true,
+	}
+	if pr.MyReview != MyApproved {
+		t.Fatal("MyReview field not set")
+	}
+	if pr.OthReview != OthMixed {
+		t.Fatal("OthReview field not set")
+	}
+	if pr.Activity != ActMine {
+		t.Fatal("Activity field not set")
+	}
+	if !pr.IsDraft {
+		t.Fatal("IsDraft field not set")
+	}
+}
+
+func TestIndicatorTypes_Exist(t *testing.T) {
+	var me MyReviewIndicator = MyNone
+	if me != MyReviewIndicator("none") {
+		t.Fatalf("expected 'none', got %s", me)
+	}
+	var oth OthReviewIndicator = OthApproved
+	if oth != OthReviewIndicator("approved") {
+		t.Fatalf("expected 'approved', got %s", oth)
+	}
+	var act ActivityIndicator = ActMine
+	if act != ActivityIndicator("mine") {
+		t.Fatalf("expected 'mine', got %s", act)
 	}
 }

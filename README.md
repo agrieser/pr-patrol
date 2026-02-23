@@ -4,20 +4,20 @@ See every PR waiting for you across an entire GitHub org — without clicking th
 
 pr-patrol fetches all open pull requests in an organization and shows each one with a three-column indicator display: **your review status**, **others' reviews**, and **comment activity**. Repo names and authors are color-coded so you can scan at a glance.
 
-```ansi
-[2m👤 👥 💬[0m
-[2m·[0m [32m✓[0m [36m●[0m [35mbilling-svc#342 [0m [32msamantha[0m  Add invoice PDF generation endpoint
-[2m·[0m [33m±[0m [37m○[0m [36mweb-app#891     [0m [33mdanielk [0m  Fix timezone handling in scheduler
-[2m~[0m [2m·[0m [2m·[0m [35mbilling-svc#339 [0m [36mrchen   [0m  Update Stripe webhook handler for new API version
-[32m✓[0m [32m✓[0m [2m·[0m [34mauth-svc#156    [0m [36mrchen   [0m  Add SAML SSO support for enterprise accounts
-[31m✗[0m [33m±[0m [2m·[0m [35mbilling-svc#337 [0m [31mmlopez  [0m  Refactor subscription tier logic
-[2m·[0m [2m·[0m [2m·[0m [36mweb-app#885     [0m [33mjpark   [0m  Dark mode toggle in user preferences
-[2m·[0m [2m·[0m [37m○[0m [34mdeploy-tools#78 [0m [33mdanielk [0m  Add canary deployment support to rollout script
-[32m✓[0m [31m✗[0m [36m●[0m [31mapi-gateway#214 [0m [32msamantha[0m  Rate limiting per API key
-[2m·[0m [32m✓[0m [2m·[0m [36mweb-app#882     [0m [31mmlopez  [0m  Migrate user settings page to React 19
-[2m~[0m [2m·[0m [36m●[0m [34mauth-svc#153    [0m [33mjpark   [0m  Fix session expiry race condition
-[2m·[0m [2m·[0m [2m·[0m [31mdata-pipeline#45[0m [36mrchen   [0m  Add retry logic for failed ETL jobs
-[31m✗[0m [2m·[0m [37m○[0m [36mweb-app#878     [0m [33mdanielk [0m  Accessibility improvements for nav components
+```
+👤 👥 💬
+· ✓ ● billing-svc#342   samantha  Add invoice PDF generation endpoint
+· ± ○ web-app#891       danielk   Fix timezone handling in scheduler
+~ · · billing-svc#339   rchen     Update Stripe webhook handler for new API version
+✓ ✓ · auth-svc#156      rchen     Add SAML SSO support for enterprise accounts
+✗ ± · billing-svc#337   mlopez    Refactor subscription tier logic
+· · · web-app#885       jpark     Dark mode toggle in user preferences
+· · ○ deploy-tools#78   danielk   Add canary deployment support to rollout script
+✓ ✗ ● api-gateway#214   samantha  Rate limiting per API key
+· ✓ · web-app#882       mlopez    Migrate user settings page to React 19
+~ · ● auth-svc#153      jpark     Fix session expiry race condition
+· · · data-pipeline#45  rchen     Add retry logic for failed ETL jobs
+✗ · ○ web-app#878       danielk   Accessibility improvements for nav components
 ```
 
 ## Indicator Columns

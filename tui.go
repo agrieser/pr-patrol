@@ -70,16 +70,17 @@ type model struct {
 }
 
 type modelConfig struct {
-	rawPRs     []PRNode
-	me         string
-	myTeams    map[string]bool
+	rawPRs         []PRNode
+	me             string
+	myTeams        map[string]bool
 	showAuthored   bool
 	showAssigned   bool
-	showAuthor bool
-	sortMode   SortMode
-	loading    bool
-	org        string
-	limit      int
+	showAuthor     bool
+	sortMode       SortMode
+	loading        bool
+	org            string
+	limit          int
+	dismissedRepos map[string]bool
 }
 
 type dataLoadedMsg struct {
@@ -134,10 +135,27 @@ func fetchDataCmd(org string, limit int) tea.Cmd {
 	}
 }
 
+func filterDismissedRepos(prs []ClassifiedPR, repos map[string]bool) []ClassifiedPR {
+	if len(repos) == 0 {
+		return prs
+	}
+	var out []ClassifiedPR
+	for _, pr := range prs {
+		if !repos[pr.RepoName] {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
+
 func newModel(cfg modelConfig) model {
+	dismissedRepos := cfg.dismissedRepos
+	if dismissedRepos == nil {
+		dismissedRepos = make(map[string]bool)
+	}
 	m := model{
 		dismissed:      make(map[string]bool),
-		dismissedRepos: make(map[string]bool),
+		dismissedRepos: dismissedRepos,
 		rawPRs:     cfg.rawPRs,
 		me:         cfg.me,
 		myTeams:    cfg.myTeams,

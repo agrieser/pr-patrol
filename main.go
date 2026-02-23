@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	pflag "github.com/spf13/pflag"
@@ -15,6 +16,7 @@ func main() {
 	mine := pflag.Bool("assigned", false, "Only show PRs assigned to you for review")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
+	dismissRepos := pflag.StringSlice("dismiss-repos", nil, "Repos to hide (comma-separated)")
 	demo := pflag.Bool("demo", false, "Show demo data (for screenshots)")
 	pflag.Parse()
 
@@ -37,6 +39,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	dismissedRepoSet := make(map[string]bool)
+	for _, r := range *dismissRepos {
+		r = strings.TrimSpace(r)
+		if r != "" {
+			dismissedRepoSet[r] = true
+		}
+	}
+
 	if *plain {
 		fmt.Fprintf(os.Stderr, "Fetching PRs for %s...\n", *org)
 
@@ -54,6 +64,7 @@ func main() {
 
 		if *author {
 			classified := classifyAllAuthor(prs, me, SortPriority)
+			classified = filterDismissedRepos(classified, dismissedRepoSet)
 			if len(classified) == 0 {
 				fmt.Fprintln(os.Stderr, "No open PRs authored by you.")
 				return
@@ -74,6 +85,7 @@ func main() {
 			}
 		}
 		classified := classifyAll(prs, me, *self, filter, SortPriority)
+		classified = filterDismissedRepos(classified, dismissedRepoSet)
 		if len(classified) == 0 {
 			fmt.Fprintln(os.Stderr, "No PRs pending your review.")
 			return
@@ -84,12 +96,13 @@ func main() {
 
 	// TUI path: start with loading spinner, fetch data async
 	p := tea.NewProgram(newModel(modelConfig{
-		loading:    true,
-		org:        *org,
-		limit:      *limit,
+		loading:        true,
+		org:            *org,
+		limit:          *limit,
 		showAuthored:   *self,
 		showAssigned:   *mine,
-		showAuthor: *author,
+		showAuthor:     *author,
+		dismissedRepos: dismissedRepoSet,
 	}), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

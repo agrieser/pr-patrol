@@ -101,6 +101,7 @@ pr-patrol --plain | wc -l
 | `--authored` | | Include PRs you authored (excluded by default) |
 | `--assigned` | | Only show PRs assigned to you for review |
 | `--author` | | Show your own PRs and their review status |
+| `--dismiss-repos` | | Repos to hide, comma-separated (e.g. `repo1,repo2`) |
 | `--limit` | | Maximum PRs to fetch (default 500) |
 
 ### TUI Keys

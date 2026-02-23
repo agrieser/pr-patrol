@@ -87,6 +87,7 @@ pr-patrol
 | `j` / `k` / `↑` / `↓` | Navigate |
 | `Enter` | Open PR in browser |
 | `d` | Dismiss PR (session only) |
+| `c` | Comment `@claude please review this PR` |
 | `s` | Toggle showing self-authored PRs |
 | `m` | Toggle filtering to requested-reviewer PRs |
 | `a` | Toggle author mode (see your PRs' review status) |

@@ -58,10 +58,11 @@ type model struct {
 	showMine   bool
 	showAuthor bool
 
-	loading  bool
-	org      string
-	errMsg   string
-	showHelp bool
+	loading   bool
+	org       string
+	errMsg    string
+	showHelp  bool
+	statusMsg string
 }
 
 type modelConfig struct {
@@ -83,6 +84,23 @@ type dataLoadedMsg struct {
 
 type fetchErrMsg struct {
 	err error
+}
+
+type commentPostedMsg struct {
+	repo   string
+	number int
+	err    error
+}
+
+func postCommentCmd(repo string, number int, body string) tea.Cmd {
+	return func() tea.Msg {
+		c := exec.Command("gh", "pr", "comment",
+			"-R", repo,
+			fmt.Sprintf("%d", number),
+			"--body", body)
+		err := c.Run()
+		return commentPostedMsg{repo: repo, number: number, err: err}
+	}
 }
 
 func fetchDataCmd(org string) tea.Cmd {
@@ -157,7 +175,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchErrMsg:
 		m.loading = false
 		m.errMsg = msg.err.Error()
+	case commentPostedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to comment on %s#%d: %v", msg.repo, msg.number, msg.err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Commented on %s#%d", msg.repo, msg.number)
+		}
 	case tea.KeyMsg:
+		m.statusMsg = "" // clear status on any keypress
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -213,6 +238,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor >= len(vis) && m.cursor > 0 {
 					m.cursor--
 				}
+			}
+		case "c":
+			if pr, ok := m.selectedPR(); ok {
+				m.statusMsg = fmt.Sprintf("Commenting on %s#%d...", pr.RepoName, pr.Number)
+				return m, postCommentCmd(pr.RepoFullName, pr.Number, "@claude please review this PR")
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -306,7 +336,7 @@ func (m model) View() string {
 	var help string
 	if m.showAuthor {
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  a: %s  r: refresh  ?: legend  q: quit",
+			"j/k: navigate  enter: open  d: dismiss  c: @claude  a: %s  r: refresh  ?: legend  q: quit",
 			authorLabel,
 		))
 	} else {
@@ -319,11 +349,16 @@ func (m model) View() string {
 			mineLabel = "mine:on"
 		}
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  s: %s  m: %s  a: %s  r: refresh  ?: legend  q: quit",
+			"j/k: navigate  enter: open  d: dismiss  c: @claude  s: %s  m: %s  a: %s  r: refresh  ?: legend  q: quit",
 			selfLabel, mineLabel, authorLabel,
 		))
 	}
-	b.WriteString("\n")
+	if m.statusMsg != "" {
+		b.WriteString(styleCyan.Render(m.statusMsg))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
+	}
 	b.WriteString(help)
 
 	return b.String()

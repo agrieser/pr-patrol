@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -436,6 +437,56 @@ func TestModel_HelpBarShowsLegendKey(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "?: legend") {
 		t.Error("expected help bar to show '?: legend'")
+	}
+}
+
+func TestModel_ClaudeComment(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.org = "testorg"
+	m := newModel(cfg)
+	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
+
+	// Press c — should set status message and return a command
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m2 := updated.(model)
+	if !strings.Contains(m2.statusMsg, "Commenting on") {
+		t.Errorf("expected status message about commenting, got %q", m2.statusMsg)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil command from c key")
+	}
+}
+
+func TestModel_CommentPostedSuccess(t *testing.T) {
+	m := newModel(testModelConfig())
+	m = sendMsg(m, commentPostedMsg{repo: "org/repo", number: 42, err: nil})
+	if !strings.Contains(m.statusMsg, "Commented on org/repo#42") {
+		t.Errorf("expected success status, got %q", m.statusMsg)
+	}
+}
+
+func TestModel_CommentPostedError(t *testing.T) {
+	m := newModel(testModelConfig())
+	m = sendMsg(m, commentPostedMsg{repo: "org/repo", number: 42, err: fmt.Errorf("auth failed")})
+	if !strings.Contains(m.statusMsg, "Failed") {
+		t.Errorf("expected failure status, got %q", m.statusMsg)
+	}
+}
+
+func TestModel_StatusClearsOnKeypress(t *testing.T) {
+	m := newModel(testModelConfig())
+	m.statusMsg = "some status"
+	m = sendKey(m, 'j')
+	if m.statusMsg != "" {
+		t.Errorf("expected status cleared after keypress, got %q", m.statusMsg)
+	}
+}
+
+func TestModel_HelpBarShowsClaudeKey(t *testing.T) {
+	m := sendMsg(newModel(testModelConfig()), tea.WindowSizeMsg{Width: 120, Height: 20})
+	view := m.View()
+	if !strings.Contains(view, "c: @claude") {
+		t.Error("expected help bar to show 'c: @claude'")
 	}
 }
 

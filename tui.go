@@ -58,6 +58,7 @@ type model struct {
 	showSelf   bool
 	showMine   bool
 	showAuthor bool
+	sortMode   SortMode
 
 	loading   bool
 	org       string
@@ -74,6 +75,7 @@ type modelConfig struct {
 	showSelf   bool
 	showMine   bool
 	showAuthor bool
+	sortMode   SortMode
 	loading    bool
 	org        string
 	limit      int
@@ -140,6 +142,7 @@ func newModel(cfg modelConfig) model {
 		showSelf:   cfg.showSelf,
 		showMine:   cfg.showMine,
 		showAuthor: cfg.showAuthor,
+		sortMode:   cfg.sortMode,
 		loading:    cfg.loading,
 		org:        cfg.org,
 		limit:      cfg.limit,
@@ -152,7 +155,7 @@ func newModel(cfg modelConfig) model {
 
 func (m *model) reclassify() {
 	if m.showAuthor {
-		m.items = classifyAllAuthor(m.rawPRs, m.me)
+		m.items = classifyAllAuthor(m.rawPRs, m.me, m.sortMode)
 	} else {
 		var filter func(PRNode) bool
 		if m.showMine {
@@ -161,7 +164,7 @@ func (m *model) reclassify() {
 				return isRequestedReviewer(pr, me, teams)
 			}
 		}
-		m.items = classifyAll(m.rawPRs, m.me, m.showSelf, filter)
+		m.items = classifyAll(m.rawPRs, m.me, m.showSelf, filter, m.sortMode)
 	}
 	m.cols = computeColumns(m.items)
 }
@@ -233,6 +236,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.reclassify()
 				m.cursor = 0
 			}
+		case "o":
+			if m.sortMode == SortDate {
+				m.sortMode = SortPriority
+			} else {
+				m.sortMode = SortDate
+			}
+			m.reclassify()
+			m.cursor = 0
 		case "r":
 			if m.org != "" {
 				m.loading = true
@@ -347,12 +358,16 @@ func (m model) View() string {
 	if m.showAuthor {
 		authorLabel = "author:on"
 	}
+	sortLabel := "sort:priority"
+	if m.sortMode == SortDate {
+		sortLabel = "sort:date"
+	}
 
 	var help string
 	if m.showAuthor {
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  c: @claude  a: %s  r: refresh  ?: legend  q: quit",
-			authorLabel,
+			"j/k: navigate  enter: open  d: dismiss  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			sortLabel, authorLabel,
 		))
 	} else {
 		selfLabel := "self:off"
@@ -364,8 +379,8 @@ func (m model) View() string {
 			mineLabel = "mine:on"
 		}
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d: dismiss  c: @claude  s: %s  m: %s  a: %s  r: refresh  ?: legend  q: quit",
-			selfLabel, mineLabel, authorLabel,
+			"j/k: navigate  enter: open  d: dismiss  c: @claude  s: %s  m: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			selfLabel, mineLabel, sortLabel, authorLabel,
 		))
 	}
 	if m.statusMsg != "" {

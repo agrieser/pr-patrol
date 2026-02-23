@@ -11,7 +11,7 @@ import (
 func main() {
 	org := pflag.String("org", "", "GitHub organization (or set GITHUB_ORG)")
 	plain := pflag.Bool("plain", false, "Plain text output (no TUI)")
-	self := pflag.Bool("self", false, "Include self-authored PRs")
+	self := pflag.Bool("show-self", false, "Include self-authored PRs")
 	mine := pflag.Bool("mine", false, "Only show PRs where you are a requested reviewer")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
@@ -53,7 +53,7 @@ func main() {
 		}
 
 		if *author {
-			classified := classifyAllAuthor(prs, me)
+			classified := classifyAllAuthor(prs, me, SortPriority)
 			if len(classified) == 0 {
 				fmt.Fprintln(os.Stderr, "No open PRs authored by you.")
 				return
@@ -73,7 +73,7 @@ func main() {
 				return isRequestedReviewer(pr, me, myTeams)
 			}
 		}
-		classified := classifyAll(prs, me, *self, filter)
+		classified := classifyAll(prs, me, *self, filter, SortPriority)
 		if len(classified) == 0 {
 			fmt.Fprintln(os.Stderr, "No PRs pending your review.")
 			return

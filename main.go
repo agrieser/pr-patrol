@@ -31,7 +31,7 @@ func main() {
 	}
 
 	if *demo {
-		renderPlain(os.Stdout, demoData())
+		renderPlain(os.Stdout, demoData(), SortPriority)
 		return
 	}
 
@@ -94,7 +94,7 @@ func main() {
 				fmt.Fprintln(os.Stderr, "No open PRs authored by you.")
 				return
 			}
-			renderPlain(os.Stdout, classified)
+			renderPlain(os.Stdout, classified, SortPriority)
 			return
 		}
 
@@ -115,7 +115,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "No PRs pending your review.")
 			return
 		}
-		renderPlain(os.Stdout, classified)
+		renderPlain(os.Stdout, classified, SortPriority)
 		return
 	}
 

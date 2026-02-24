@@ -336,7 +336,18 @@ func (m model) View() string {
 	if m.showAuthor {
 		header = "📝 👥 💬"
 	}
-	b.WriteString(helpStyle.Render(header))
+	// Pad to align age label over the age column
+	ageLabel := "age"
+	if m.sortMode == SortDate {
+		ageLabel = "act"
+	}
+	headerPad := 6 + m.cols.repo + 2 + m.cols.author + 2 // indicators + space + repo + sep + author + sep
+	padNeeded := headerPad - lipgloss.Width(header)
+	if padNeeded < 1 {
+		padNeeded = 1
+	}
+	headerLine := header + strings.Repeat(" ", padNeeded) + fmt.Sprintf("%4s", ageLabel)
+	b.WriteString(helpStyle.Render(headerLine))
 	b.WriteString("\n")
 
 	// Scrolling: determine visible window
@@ -360,9 +371,14 @@ func (m model) View() string {
 		indicators := formatIndicators(pr, m.showAuthor, bg)
 		repoCol := fmt.Sprintf("%-*s", m.cols.repo, fmt.Sprintf("%s#%d", pr.RepoName, pr.Number))
 		authorCol := fmt.Sprintf("%-*s", m.cols.author, pr.Author)
+		ageTime := pr.CreatedAt
+		if m.sortMode == SortDate {
+			ageTime = pr.LastActivity
+		}
+		ageCol := fmt.Sprintf("%4s", formatAge(ageTime))
 
 		// Build plain line for truncation check, then colorized version for display
-		plainLine := fmt.Sprintf("%s %s  %s  %s", "     ", repoCol, authorCol, pr.Title)
+		plainLine := fmt.Sprintf("%s %s  %s  %s  %s", "     ", repoCol, authorCol, ageCol, pr.Title)
 		titleText := pr.Title
 		if m.width > 0 && len(plainLine) > m.width {
 			// Truncate title to fit
@@ -380,8 +396,9 @@ func (m model) View() string {
 			coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
 			coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
 			sep := selBg.Render("  ")
+			ageRendered := styleDim.Inherit(selBg).Render(ageCol)
 			titleRendered := selBg.Render(titleText)
-			line = indicators + selBg.Render(" ") + coloredRepo + sep + coloredAuthor + sep + titleRendered
+			line = indicators + selBg.Render(" ") + coloredRepo + sep + coloredAuthor + sep + ageRendered + sep + titleRendered
 			// Pad to full width
 			if m.width > 0 {
 				lineLen := lipgloss.Width(line)
@@ -392,7 +409,8 @@ func (m model) View() string {
 		} else {
 			coloredRepo = nameColor(pr.RepoName).Render(repoCol)
 			coloredAuthor = nameColor(pr.Author).Render(authorCol)
-			line = fmt.Sprintf("%s %s  %s  %s", indicators, coloredRepo, coloredAuthor, titleText)
+			ageRendered := styleDim.Render(ageCol)
+			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, titleText)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")

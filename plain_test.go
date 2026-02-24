@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderPlain(t *testing.T) {
@@ -25,20 +26,20 @@ func TestRenderPlain(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	renderPlain(&buf, items)
+	renderPlain(&buf, items, SortPriority)
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %q", len(lines), buf.String())
 	}
 
-	// Columns are padded: repo to 6 (api#42), author to 5 (alice)
-	expected0 := "· ✓ ● api#42  alice  Add endpoint"
+	// Columns are padded: repo to 6 (api#42), author to 5 (alice), age 4 chars right-aligned
+	expected0 := "· ✓ ● api#42  alice     -  Add endpoint"
 	if lines[0] != expected0 {
 		t.Fatalf("line 0:\ngot:  %q\nwant: %q", lines[0], expected0)
 	}
 
-	expected1 := "~ · · web#7   bob    Fix layout"
+	expected1 := "~ · · web#7   bob       -  Fix layout"
 	if lines[1] != expected1 {
 		t.Fatalf("line 1:\ngot:  %q\nwant: %q", lines[1], expected1)
 	}
@@ -46,7 +47,7 @@ func TestRenderPlain(t *testing.T) {
 
 func TestRenderPlain_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	renderPlain(&buf, nil)
+	renderPlain(&buf, nil, SortPriority)
 	if buf.Len() != 0 {
 		t.Fatalf("expected empty output, got %q", buf.String())
 	}
@@ -61,7 +62,7 @@ func TestRenderPlain_AllIndicators(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	renderPlain(&buf, items)
+	renderPlain(&buf, items, SortPriority)
 
 	output := buf.String()
 	// Should NOT contain old tags
@@ -73,6 +74,35 @@ func TestRenderPlain_AllIndicators(t *testing.T) {
 		if !strings.Contains(output, ch) {
 			t.Errorf("expected output to contain %s", ch)
 		}
+	}
+}
+
+func TestFormatAge(t *testing.T) {
+	cases := []struct {
+		dur  time.Duration
+		want string
+	}{
+		{30 * time.Minute, "now"},
+		{2 * time.Hour, "2h"},
+		{9 * time.Hour, "9h"},
+		{10 * time.Hour, "1d"},
+		{3 * 24 * time.Hour, "3d"},
+		{10 * 24 * time.Hour, "1w"},
+		{22 * 24 * time.Hour, "3w"},
+		{45 * 24 * time.Hour, "1m"},
+		{180 * 24 * time.Hour, "6m"},
+		{400 * 24 * time.Hour, "1y"},
+	}
+	for _, tc := range cases {
+		got := formatAge(time.Now().Add(-tc.dur))
+		if got != tc.want {
+			t.Errorf("formatAge(-%v) = %q, want %q", tc.dur, got, tc.want)
+		}
+	}
+
+	// Zero time
+	if got := formatAge(time.Time{}); got != " -" {
+		t.Errorf("formatAge(zero) = %q, want %q", got, " -")
 	}
 }
 
@@ -88,7 +118,7 @@ func TestRenderPlain_NewFormat(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	renderPlain(&buf, items)
+	renderPlain(&buf, items, SortPriority)
 	output := buf.String()
 
 	if strings.Contains(output, "[NEW]") || strings.Contains(output, "[STL]") {

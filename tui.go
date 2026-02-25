@@ -460,21 +460,36 @@ func (m model) View() string {
 func (m model) renderLegend() string {
 	var b strings.Builder
 	b.WriteString("Column 1 — Your Review:\n")
-	b.WriteString(fmt.Sprintf("  %s  No review yet\n", styleDim.Render("·")))
 	b.WriteString(fmt.Sprintf("  %s  You approved\n", styleGreen.Render("✓")))
 	b.WriteString(fmt.Sprintf("  %s  You requested changes\n", styleRed.Render("✗")))
-	b.WriteString(fmt.Sprintf("  %s  Your review is stale (new commits since)\n", styleDim.Render("~")))
+	b.WriteString(fmt.Sprintf("  %s  You left review comments\n", styleYellow.Render("◆")))
+	b.WriteString(fmt.Sprintf("  %s  No review yet\n", styleDim.Render("·")))
+	b.WriteString("  Color: bright = current, gray = stale\n")
 	b.WriteString("\n")
 	b.WriteString("Column 2 — Others' Reviews:\n")
-	b.WriteString(fmt.Sprintf("  %s  No reviews yet\n", styleDim.Render("·")))
 	b.WriteString(fmt.Sprintf("  %s  All approved\n", styleGreen.Render("✓")))
 	b.WriteString(fmt.Sprintf("  %s  Changes requested\n", styleRed.Render("✗")))
 	b.WriteString(fmt.Sprintf("  %s  Mixed reviews\n", styleYellow.Render("±")))
+	b.WriteString(fmt.Sprintf("  %s  No reviews yet\n", styleDim.Render("·")))
 	b.WriteString("\n")
 	b.WriteString("Column 3 — Comments:\n")
-	b.WriteString(fmt.Sprintf("  %s  No comments\n", styleDim.Render("·")))
-	b.WriteString(fmt.Sprintf("  %s  Others commented\n", styleWhite.Render("○")))
 	b.WriteString(fmt.Sprintf("  %s  You commented\n", styleCyan.Render("●")))
+	b.WriteString(fmt.Sprintf("  %s  Others commented\n", styleWhite.Render("○")))
+	b.WriteString(fmt.Sprintf("  %s  No comments\n", styleDim.Render("·")))
+	b.WriteString("  Color: bright = fresh, gray = stale\n")
+	b.WriteString("\n")
+	b.WriteString("Keys:\n")
+	b.WriteString("  j/k     Navigate up/down\n")
+	b.WriteString("  enter   Open PR in browser\n")
+	b.WriteString("  d       Dismiss current PR (hide it)\n")
+	b.WriteString("  D       Dismiss entire repo\n")
+	b.WriteString("  s       Toggle showing PRs you authored\n")
+	b.WriteString("  f       Toggle showing only PRs assigned to you\n")
+	b.WriteString("  a       Toggle author mode (your PRs + their review status)\n")
+	b.WriteString("  o       Toggle sort: priority vs date\n")
+	b.WriteString("  c       Post @claude review comment on current PR\n")
+	b.WriteString("  r       Refresh data from GitHub\n")
+	b.WriteString("  q       Quit\n")
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Press any key to close"))
 	return b.String()
@@ -523,8 +538,14 @@ func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) stri
 			col1 = withBg(styleGreen, bg).Render("✓")
 		case MyChanges:
 			col1 = withBg(styleRed, bg).Render("✗")
-		case MyStale:
-			col1 = withBg(styleDim, bg).Render("~")
+		case MyCommented:
+			col1 = withBg(styleYellow, bg).Render("◆")
+		case MyApprovedStale:
+			col1 = withBg(styleDim, bg).Render("✓")
+		case MyChangesStale:
+			col1 = withBg(styleDim, bg).Render("✗")
+		case MyCommentedStale:
+			col1 = withBg(styleDim, bg).Render("◆")
 		default:
 			col1 = withBg(styleDim, bg).Render("·")
 		}
@@ -550,6 +571,10 @@ func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) stri
 		col3 = withBg(styleWhite, bg).Render("○")
 	case ActMine:
 		col3 = withBg(styleCyan, bg).Render("●")
+	case ActOthersStale:
+		col3 = withBg(styleDim, bg).Render("○")
+	case ActMineStale:
+		col3 = withBg(styleDim, bg).Render("●")
 	default:
 		col3 = withBg(styleDim, bg).Render("·")
 	}

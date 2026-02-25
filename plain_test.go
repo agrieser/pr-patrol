@@ -17,7 +17,7 @@ func TestRenderPlain(t *testing.T) {
 			Author:   "alice",
 		},
 		{
-			MyReview: MyStale, OthReview: OthNone, Activity: ActNone,
+			MyReview: MyApprovedStale, OthReview: OthNone, Activity: ActNone,
 			RepoName: "web",
 			Number:   7,
 			Title:    "Fix layout",
@@ -39,7 +39,7 @@ func TestRenderPlain(t *testing.T) {
 		t.Fatalf("line 0:\ngot:  %q\nwant: %q", lines[0], expected0)
 	}
 
-	expected1 := "~ · · web#7   bob       -  Fix layout"
+	expected1 := "✓ · · web#7   bob       -  Fix layout"
 	if lines[1] != expected1 {
 		t.Fatalf("line 1:\ngot:  %q\nwant: %q", lines[1], expected1)
 	}
@@ -58,7 +58,8 @@ func TestRenderPlain_AllIndicators(t *testing.T) {
 		{MyReview: MyNone, OthReview: OthNone, Activity: ActNone, RepoName: "r", Number: 1, Title: "t", Author: "a"},
 		{MyReview: MyApproved, OthReview: OthApproved, Activity: ActOthers, RepoName: "r", Number: 2, Title: "t", Author: "a"},
 		{MyReview: MyChanges, OthReview: OthChanges, Activity: ActMine, RepoName: "r", Number: 3, Title: "t", Author: "a"},
-		{MyReview: MyStale, OthReview: OthMixed, Activity: ActNone, RepoName: "r", Number: 4, Title: "t", Author: "a"},
+		{MyReview: MyApprovedStale, OthReview: OthMixed, Activity: ActNone, RepoName: "r", Number: 4, Title: "t", Author: "a"},
+		{MyReview: MyCommented, OthReview: OthNone, Activity: ActMineStale, RepoName: "r", Number: 5, Title: "t", Author: "a"},
 	}
 
 	var buf bytes.Buffer
@@ -70,7 +71,7 @@ func TestRenderPlain_AllIndicators(t *testing.T) {
 		t.Error("plain output should not contain old tags")
 	}
 	// Should contain indicator characters
-	for _, ch := range []string{"·", "✓", "✗", "~", "±", "○", "●"} {
+	for _, ch := range []string{"·", "✓", "✗", "◆", "±", "○", "●"} {
 		if !strings.Contains(output, ch) {
 			t.Errorf("expected output to contain %s", ch)
 		}
@@ -113,7 +114,7 @@ func TestRenderPlain_NewFormat(t *testing.T) {
 			RepoName: "repo", Number: 42, Author: "alice", Title: "Add feature",
 		},
 		{
-			MyReview: MyStale, OthReview: OthNone, Activity: ActNone,
+			MyReview: MyChangesStale, OthReview: OthNone, Activity: ActNone,
 			RepoName: "repo", Number: 43, Author: "bob", Title: "Fix bug",
 		},
 	}

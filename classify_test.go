@@ -148,8 +148,8 @@ func TestComputeMyReview_StaleApproval(t *testing.T) {
 		withReview("me", "APPROVED", reviewTime),
 		withLastCommit(commitTime),
 	)
-	if got := computeMyReview(pr, "me"); got != MyStale {
-		t.Fatalf("expected MyStale, got %s", got)
+	if got := computeMyReview(pr, "me"); got != MyApprovedStale {
+		t.Fatalf("expected MyApprovedStale, got %s", got)
 	}
 }
 
@@ -160,8 +160,8 @@ func TestComputeMyReview_StaleChanges(t *testing.T) {
 		withReview("me", "CHANGES_REQUESTED", reviewTime),
 		withLastCommit(commitTime),
 	)
-	if got := computeMyReview(pr, "me"); got != MyStale {
-		t.Fatalf("expected MyStale, got %s", got)
+	if got := computeMyReview(pr, "me"); got != MyChangesStale {
+		t.Fatalf("expected MyChangesStale, got %s", got)
 	}
 }
 
@@ -195,12 +195,27 @@ func TestComputeMyReview_LatestWins(t *testing.T) {
 	}
 }
 
-func TestComputeMyReview_CommentedOnly(t *testing.T) {
+func TestComputeMyReview_Commented(t *testing.T) {
+	reviewTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
+	commitTime := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
 	pr := makePR(
-		withReview("me", "COMMENTED", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+		withReview("me", "COMMENTED", reviewTime),
+		withLastCommit(commitTime),
 	)
-	if got := computeMyReview(pr, "me"); got != MyNone {
-		t.Fatalf("expected MyNone (COMMENTED is not a substantive review), got %s", got)
+	if got := computeMyReview(pr, "me"); got != MyCommented {
+		t.Fatalf("expected MyCommented, got %s", got)
+	}
+}
+
+func TestComputeMyReview_CommentedStale(t *testing.T) {
+	reviewTime := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+	commitTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withReview("me", "COMMENTED", reviewTime),
+		withLastCommit(commitTime),
+	)
+	if got := computeMyReview(pr, "me"); got != MyCommentedStale {
+		t.Fatalf("expected MyCommentedStale, got %s", got)
 	}
 }
 
@@ -281,44 +296,87 @@ func TestComputeActivity_None(t *testing.T) {
 	}
 }
 
-func TestComputeActivity_Others(t *testing.T) {
-	pr := makePR(withComment("alice"))
+func TestComputeActivity_OthersFresh(t *testing.T) {
+	commitTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withLastCommit(commitTime),
+		withCommentAt("alice", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActOthers {
 		t.Fatalf("expected ActOthers, got %s", got)
 	}
 }
 
-func TestComputeActivity_Mine(t *testing.T) {
-	pr := makePR(withComment("me"))
+func TestComputeActivity_OthersStale(t *testing.T) {
+	commitTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withLastCommit(commitTime),
+		withCommentAt("alice", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
+	if got := computeActivity(pr, "me"); got != ActOthersStale {
+		t.Fatalf("expected ActOthersStale, got %s", got)
+	}
+}
+
+func TestComputeActivity_MineFresh(t *testing.T) {
+	commitTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withLastCommit(commitTime),
+		withCommentAt("me", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActMine {
 		t.Fatalf("expected ActMine, got %s", got)
 	}
 }
 
+func TestComputeActivity_MineStale(t *testing.T) {
+	commitTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withLastCommit(commitTime),
+		withCommentAt("me", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
+	if got := computeActivity(pr, "me"); got != ActMineStale {
+		t.Fatalf("expected ActMineStale, got %s", got)
+	}
+}
+
 func TestComputeActivity_BothMineAndOthers(t *testing.T) {
-	pr := makePR(withComment("alice"), withComment("me"))
+	commitTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	pr := makePR(
+		withLastCommit(commitTime),
+		withCommentAt("alice", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+		withCommentAt("me", time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActMine {
 		t.Fatalf("expected ActMine (mine takes precedence), got %s", got)
 	}
 }
 
 func TestComputeActivity_ReviewCountsAsActivity(t *testing.T) {
-	pr := makePR(withReview("me", "APPROVED", time.Now()))
+	pr := makePR(
+		withLastCommit(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)),
+		withReview("me", "APPROVED", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActMine {
 		t.Fatalf("expected ActMine (review counts as activity), got %s", got)
 	}
 }
 
 func TestComputeActivity_OthersReviewCountsAsActivity(t *testing.T) {
-	pr := makePR(withReview("alice", "COMMENTED", time.Now()))
+	pr := makePR(
+		withLastCommit(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)),
+		withReview("alice", "COMMENTED", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActOthers {
 		t.Fatalf("expected ActOthers (others' review counts as activity), got %s", got)
 	}
 }
 
 func TestComputeActivity_ReviewNoComments(t *testing.T) {
-	// PR with only a review (no issue comments) should still show activity
-	pr := makePR(withReview("alice", "CHANGES_REQUESTED", time.Now()))
+	pr := makePR(
+		withLastCommit(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)),
+		withReview("alice", "CHANGES_REQUESTED", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
+	)
 	if got := computeActivity(pr, "me"); got != ActOthers {
 		t.Fatalf("expected ActOthers, got %s", got)
 	}
@@ -413,7 +471,7 @@ func TestClassifyAll_BasicIndicators(t *testing.T) {
 		makePR(
 			withAuthor("bob"),
 			withReview("someone", "APPROVED", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)),
-			withComment("me"),
+			withCommentAt("me", time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)),
 			withURL("https://github.com/org/repo/pull/2"),
 		),
 	}
@@ -503,7 +561,7 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 	if len(result) != 3 {
 		t.Fatalf("expected 3 PRs, got %d", len(result))
 	}
-	if result[0].MyReview != MyStale {
+	if result[0].MyReview != MyApprovedStale {
 		t.Errorf("expected stale first, got MyReview=%s", result[0].MyReview)
 	}
 	if result[1].MyReview != MyNone {

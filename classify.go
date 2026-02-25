@@ -8,10 +8,13 @@ import (
 type MyReviewIndicator string
 
 const (
-	MyNone     MyReviewIndicator = "none"
-	MyApproved MyReviewIndicator = "approved"
-	MyChanges  MyReviewIndicator = "changes"
-	MyStale    MyReviewIndicator = "stale"
+	MyNone           MyReviewIndicator = "none"
+	MyApproved       MyReviewIndicator = "approved"
+	MyChanges        MyReviewIndicator = "changes"
+	MyCommented      MyReviewIndicator = "commented"
+	MyApprovedStale  MyReviewIndicator = "approved_stale"
+	MyChangesStale   MyReviewIndicator = "changes_stale"
+	MyCommentedStale MyReviewIndicator = "commented_stale"
 )
 
 type OthReviewIndicator string
@@ -26,9 +29,11 @@ const (
 type ActivityIndicator string
 
 const (
-	ActNone   ActivityIndicator = "none"
-	ActOthers ActivityIndicator = "others"
-	ActMine   ActivityIndicator = "mine"
+	ActNone       ActivityIndicator = "none"
+	ActOthers     ActivityIndicator = "others"
+	ActMine       ActivityIndicator = "mine"
+	ActOthersStale ActivityIndicator = "others_stale"
+	ActMineStale   ActivityIndicator = "mine_stale"
 )
 
 type SortMode string
@@ -61,7 +66,7 @@ func computeMyReview(pr PRNode, me string) MyReviewIndicator {
 			continue
 		}
 		switch r.State {
-		case "APPROVED", "CHANGES_REQUESTED":
+		case "APPROVED", "CHANGES_REQUESTED", "COMMENTED":
 			lastReview = r
 		}
 	}
@@ -70,18 +75,28 @@ func computeMyReview(pr PRNode, me string) MyReviewIndicator {
 		return MyNone
 	}
 
+	stale := false
 	if len(pr.Commits.Nodes) > 0 {
 		lastCommit := pr.Commits.Nodes[0].Commit.CommittedDate
-		if lastCommit.After(lastReview.SubmittedAt) {
-			return MyStale
-		}
+		stale = lastCommit.After(lastReview.SubmittedAt)
 	}
 
 	switch lastReview.State {
 	case "APPROVED":
+		if stale {
+			return MyApprovedStale
+		}
 		return MyApproved
 	case "CHANGES_REQUESTED":
+		if stale {
+			return MyChangesStale
+		}
 		return MyChanges
+	case "COMMENTED":
+		if stale {
+			return MyCommentedStale
+		}
+		return MyCommented
 	}
 	return MyNone
 }
@@ -125,28 +140,46 @@ func computeOthReview(pr PRNode, me string) OthReviewIndicator {
 }
 
 func computeActivity(pr PRNode, me string) ActivityIndicator {
-	hasMine := false
-	hasOthers := false
+	var lastCommit time.Time
+	if len(pr.Commits.Nodes) > 0 {
+		lastCommit = pr.Commits.Nodes[0].Commit.CommittedDate
+	}
+
+	var latestMine, latestOthers time.Time
 	for _, c := range pr.Comments.Nodes {
 		if c.Author.Login == me {
-			hasMine = true
+			if c.CreatedAt.After(latestMine) {
+				latestMine = c.CreatedAt
+			}
 		} else if c.Author.Login != "" {
-			hasOthers = true
+			if c.CreatedAt.After(latestOthers) {
+				latestOthers = c.CreatedAt
+			}
 		}
 	}
-	// Reviews (approve, request changes, comment) also count as activity
 	for _, r := range pr.Reviews.Nodes {
 		if r.Author.Login == me {
-			hasMine = true
+			if r.SubmittedAt.After(latestMine) {
+				latestMine = r.SubmittedAt
+			}
 		} else if r.Author.Login != "" {
-			hasOthers = true
+			if r.SubmittedAt.After(latestOthers) {
+				latestOthers = r.SubmittedAt
+			}
 		}
 	}
-	if hasMine {
-		return ActMine
+
+	if !latestMine.IsZero() {
+		if lastCommit.IsZero() || latestMine.After(lastCommit) {
+			return ActMine
+		}
+		return ActMineStale
 	}
-	if hasOthers {
-		return ActOthers
+	if !latestOthers.IsZero() {
+		if lastCommit.IsZero() || latestOthers.After(lastCommit) {
+			return ActOthers
+		}
+		return ActOthersStale
 	}
 	return ActNone
 }
@@ -208,7 +241,7 @@ func isRequestedReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
 
 func sortPriority(pr ClassifiedPR) int {
 	switch pr.MyReview {
-	case MyStale:
+	case MyApprovedStale, MyChangesStale, MyCommentedStale, MyCommented:
 		return 0
 	case MyNone:
 		if pr.OthReview == OthNone {

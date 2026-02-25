@@ -31,12 +31,12 @@ func plainIndicators(pr ClassifiedPR) string {
 	switch pr.MyReview {
 	case MyNone:
 		col1 = "·"
-	case MyApproved:
+	case MyApproved, MyApprovedStale:
 		col1 = "✓"
-	case MyChanges:
+	case MyChanges, MyChangesStale:
 		col1 = "✗"
-	case MyStale:
-		col1 = "~"
+	case MyCommented, MyCommentedStale:
+		col1 = "◆"
 	default:
 		col1 = "·"
 	}
@@ -57,9 +57,9 @@ func plainIndicators(pr ClassifiedPR) string {
 	switch pr.Activity {
 	case ActNone:
 		col3 = "·"
-	case ActOthers:
+	case ActOthers, ActOthersStale:
 		col3 = "○"
-	case ActMine:
+	case ActMine, ActMineStale:
 		col3 = "●"
 	default:
 		col3 = "·"

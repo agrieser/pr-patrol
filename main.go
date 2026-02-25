@@ -9,6 +9,8 @@ import (
 	pflag "github.com/spf13/pflag"
 )
 
+var version = "dev"
+
 func main() {
 	org := pflag.String("org", "", "GitHub organization (or set GITHUB_ORG)")
 	plain := pflag.Bool("plain", false, "Plain text output (no TUI)")
@@ -19,7 +21,13 @@ func main() {
 	dismissRepos := pflag.StringSlice("dismiss-repos", nil, "Repos to hide (comma-separated)")
 	debug := pflag.Bool("debug", false, "Print debug info for review classification")
 	demo := pflag.Bool("demo", false, "Show demo data (for screenshots)")
+	showVersion := pflag.Bool("version", false, "Print version and exit")
 	pflag.Parse()
+
+	if *showVersion {
+		fmt.Println("pr-patrol " + version)
+		return
+	}
 
 	if *org == "" {
 		*org = os.Getenv("GITHUB_ORG")

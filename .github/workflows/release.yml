@@ -23,12 +23,14 @@ jobs:
 
       - name: Build binaries
         run: |
+          VERSION=${GITHUB_REF_NAME}
+          LDFLAGS="-s -w -X main.version=${VERSION}"
           mkdir -p dist
-          GOOS=darwin GOARCH=arm64 go build -o dist/pr-patrol-darwin-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -o dist/pr-patrol-darwin-amd64 .
-          GOOS=linux GOARCH=amd64 go build -o dist/pr-patrol-linux-amd64 .
-          GOOS=linux GOARCH=arm64 go build -o dist/pr-patrol-linux-arm64 .
-          GOOS=windows GOARCH=amd64 go build -o dist/pr-patrol-windows-amd64.exe .
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/pr-patrol-darwin-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pr-patrol-darwin-amd64 .
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pr-patrol-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/pr-patrol-linux-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pr-patrol-windows-amd64.exe .
 
       - name: Create release
         uses: softprops/action-gh-release@v2

@@ -58,8 +58,9 @@ func nameColor(name string) lipgloss.Style {
 type model struct {
 	items        []ClassifiedPR
 	cursor       int
-	dismissed    map[string]bool
-	dismissedRepos map[string]bool
+	dismissed       map[string]bool
+	dismissedRepos  map[string]bool
+	dismissedAuthors map[string]bool
 	cols      colWidths
 	width     int
 	height    int
@@ -231,8 +232,9 @@ func newModel(cfg modelConfig) model {
 		dismissedRepos = make(map[string]bool)
 	}
 	m := model{
-		dismissed:      make(map[string]bool),
-		dismissedRepos: dismissedRepos,
+		dismissed:        make(map[string]bool),
+		dismissedRepos:   dismissedRepos,
+		dismissedAuthors: make(map[string]bool),
 		rawPRs:     cfg.rawPRs,
 		me:         cfg.me,
 		myTeams:    cfg.myTeams,
@@ -385,6 +387,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if pr, ok := m.selectedPR(); ok {
 				m.dismissedRepos[pr.RepoName] = true
 				m.statusMsg = fmt.Sprintf("Dismissed repo %s", pr.RepoName)
+				vis := m.visibleItems()
+				if m.cursor >= len(vis) && m.cursor > 0 {
+					m.cursor = len(vis) - 1
+				}
+			}
+		case "A":
+			if pr, ok := m.selectedPR(); ok {
+				m.dismissedAuthors[pr.Author] = true
+				m.statusMsg = fmt.Sprintf("Dismissed author %s", pr.Author)
 				vis := m.visibleItems()
 				if m.cursor >= len(vis) && m.cursor > 0 {
 					m.cursor = len(vis) - 1
@@ -554,7 +565,7 @@ func (m model) View() string {
 	var help string
 	if m.showAuthor {
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d/D: dismiss PR/repo  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			"j/k: navigate  enter: open  d/D/A: dismiss PR/repo/author  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
 			sortLabel, authorLabel,
 		))
 	} else {
@@ -567,7 +578,7 @@ func (m model) View() string {
 			assignedLabel = "assigned:on"
 		}
 		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d/D: dismiss PR/repo  c: @claude  s: %s  f: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
+			"j/k: navigate  enter: open  d/D/A: dismiss PR/repo/author  c: @claude  s: %s  f: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
 			authoredLabel, assignedLabel, sortLabel, authorLabel,
 		))
 	}
@@ -618,6 +629,7 @@ func (m model) renderLegend() string {
 	b.WriteString("  enter   Open PR in browser\n")
 	b.WriteString("  d       Dismiss current PR (hide it)\n")
 	b.WriteString("  D       Dismiss entire repo\n")
+	b.WriteString("  A       Dismiss author (e.g. dependabot)\n")
 	b.WriteString("  s       Toggle showing PRs you authored\n")
 	b.WriteString("  f       Toggle showing only PRs assigned to you\n")
 	b.WriteString("  a       Toggle author mode (your PRs + their review status)\n")
@@ -633,7 +645,7 @@ func (m model) renderLegend() string {
 func (m model) visibleItems() []ClassifiedPR {
 	var vis []ClassifiedPR
 	for _, pr := range m.items {
-		if m.dismissed[pr.URL] || m.dismissedRepos[pr.RepoName] {
+		if m.dismissed[pr.URL] || m.dismissedRepos[pr.RepoName] || m.dismissedAuthors[pr.Author] {
 			continue
 		}
 		vis = append(vis, pr)

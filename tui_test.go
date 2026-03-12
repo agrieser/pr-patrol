@@ -388,6 +388,7 @@ func TestModel_RefreshKey(t *testing.T) {
 	cfg := testModelConfig()
 	cfg.org = "testorg"
 	m := newModel(cfg)
+	oldFetchID := m.fetchID
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	m2 := updated.(model)
 	if !m2.loading {
@@ -395,6 +396,9 @@ func TestModel_RefreshKey(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected non-nil command from r key")
+	}
+	if m2.fetchID != oldFetchID+1 {
+		t.Fatalf("expected fetchID to increment, got %d", m2.fetchID)
 	}
 }
 
@@ -404,16 +408,78 @@ func TestModel_DataLoaded(t *testing.T) {
 	cfg.loading = true
 	m := newModel(cfg)
 
-	m = sendMsg(m, dataLoadedMsg{
+	m = sendMsg(m, fetchPageMsg{
 		prs:     testModelConfig().rawPRs,
 		me:      "me",
 		myTeams: make(map[string]bool),
+		done:    true,
 	})
 	if m.loading {
 		t.Fatal("expected loading=false after data loaded")
 	}
 	if len(m.items) == 0 {
 		t.Fatal("expected items to be populated after data loaded")
+	}
+}
+
+func TestModel_PartialLoad(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.rawPRs = nil
+	cfg.loading = true
+	m := newModel(cfg)
+
+	// Send a partial page (not done)
+	ch := make(chan []PRNode, 1)
+	m2, cmd := m.Update(fetchPageMsg{
+		prs:     testModelConfig().rawPRs[:2],
+		me:      "me",
+		myTeams: make(map[string]bool),
+		done:    false,
+		ch:      ch,
+	})
+	m = m2.(model)
+	if !m.loading {
+		t.Fatal("expected loading=true during partial load")
+	}
+	if m.loadingCount != 2 {
+		t.Fatalf("expected loadingCount=2, got %d", m.loadingCount)
+	}
+	if len(m.items) == 0 {
+		t.Fatal("expected items to be populated during partial load")
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil command to read next page")
+	}
+
+	// View should show loading count
+	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
+	view := m.View()
+	if !strings.Contains(view, "Fetching") {
+		t.Error("expected loading indicator in view during partial load")
+	}
+	close(ch)
+}
+
+func TestModel_StaleFetchIgnored(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.org = "testorg"
+	m := newModel(cfg)
+	initialItems := len(m.items)
+
+	// Simulate a stale fetch message (wrong fetchID)
+	m2, _ := m.Update(fetchPageMsg{
+		prs:     nil,
+		me:      "other",
+		myTeams: make(map[string]bool),
+		done:    true,
+		fetchID: 999,
+	})
+	m = m2.(model)
+	if len(m.items) != initialItems {
+		t.Fatal("expected stale fetch to be ignored")
+	}
+	if m.me != "me" {
+		t.Fatal("expected me to be unchanged after stale fetch")
 	}
 }
 
@@ -522,5 +588,78 @@ func TestFormatIndicators_AuthorMode(t *testing.T) {
 	result := formatIndicators(pr, true, nil)
 	if result == "" {
 		t.Fatal("expected non-empty indicator string")
+	}
+}
+
+func TestFilterDismissedRepos(t *testing.T) {
+	prs := []ClassifiedPR{
+		{RepoName: "keep-me", Title: "a"},
+		{RepoName: "drop-me", Title: "b"},
+		{RepoName: "keep-me", Title: "c"},
+	}
+
+	// No dismissed repos — all pass through
+	result := filterDismissedRepos(prs, nil)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 with nil dismissed, got %d", len(result))
+	}
+
+	// Dismiss one repo
+	dismissed := map[string]bool{"drop-me": true}
+	result = filterDismissedRepos(prs, dismissed)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 after dismissing drop-me, got %d", len(result))
+	}
+	for _, pr := range result {
+		if pr.RepoName == "drop-me" {
+			t.Fatal("expected drop-me to be filtered out")
+		}
+	}
+}
+
+func TestModel_FetchErrWithID(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.rawPRs = nil
+	cfg.loading = true
+	m := newModel(cfg)
+
+	// Error with matching fetchID
+	m2, _ := m.Update(fetchErrMsg{err: fmt.Errorf("network error"), fetchID: 0})
+	m = m2.(model)
+	if m.loading {
+		t.Fatal("expected loading=false after error")
+	}
+	if m.errMsg == "" {
+		t.Fatal("expected error message to be set")
+	}
+
+	// Error with stale fetchID — should be ignored
+	m.loading = true
+	m.fetchID = 5
+	m.errMsg = ""
+	m2, _ = m.Update(fetchErrMsg{err: fmt.Errorf("stale error"), fetchID: 3})
+	m = m2.(model)
+	if !m.loading {
+		t.Fatal("expected loading to remain true for stale error")
+	}
+	if m.errMsg != "" {
+		t.Fatal("expected error message to remain empty for stale error")
+	}
+}
+
+func TestModel_LoadingViewWithItems(t *testing.T) {
+	cfg := testModelConfig()
+	m := newModel(cfg)
+	m.loading = true
+	m.loadingCount = 42
+	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
+	view := m.View()
+
+	// Should show items AND loading indicator
+	if !strings.Contains(view, "alice") {
+		t.Error("expected items visible during loading")
+	}
+	if !strings.Contains(view, "42 found") {
+		t.Error("expected loading count in view")
 	}
 }

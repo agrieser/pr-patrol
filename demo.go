@@ -14,5 +14,6 @@ func demoData() []ClassifiedPR {
 		{MyReview: MyChangesStale, OthReview: OthNone, Activity: ActMine, RepoName: "auth-svc", Number: 153, Author: "jpark", Title: "Fix session expiry race condition"},
 		{MyReview: MyNone, OthReview: OthNone, Activity: ActNone, RepoName: "data-pipeline", Number: 45, Author: "rchen", Title: "Add retry logic for failed ETL jobs"},
 		{MyReview: MyCommentedStale, OthReview: OthNone, Activity: ActOthersStale, RepoName: "web-app", Number: 878, Author: "danielk", Title: "Accessibility improvements for nav components"},
+		{MyReview: MyNone, OthReview: OthNone, Activity: ActNone, IsDraft: true, RepoName: "web-app", Number: 893, Author: "jpark", Title: "WIP: Notification preferences page"},
 	}
 }

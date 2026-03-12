@@ -101,11 +101,15 @@ func renderPlain(w io.Writer, items []ClassifiedPR, sortMode SortMode) {
 			ageTime = pr.LastActivity
 		}
 		age := formatAge(ageTime)
+		title := pr.Title
+		if pr.IsDraft {
+			title = "[draft] " + title
+		}
 		fmt.Fprintf(w, "%s %-*s  %-*s  %4s  %s\n",
 			indicators,
 			cols.repo, repoCol,
 			cols.author, pr.Author,
 			age,
-			pr.Title)
+			title)
 	}
 }

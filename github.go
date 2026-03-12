@@ -11,7 +11,9 @@ import (
 	"time"
 )
 
-var httpClient = &http.Client{Timeout: 30 * time.Second}
+var httpClient = &http.Client{Timeout: 60 * time.Second}
+
+const maxRetries = 3
 
 type PRNode struct {
 	Title     string    `json:"title"`
@@ -85,7 +87,7 @@ type searchResult struct {
 }
 
 const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
-  search(query: $searchQuery, type: ISSUE, first: 100, after: $cursor) {
+  search(query: $searchQuery, type: ISSUE, first: 25, after: $cursor) {
     pageInfo {
       hasNextPage
       endCursor
@@ -139,48 +141,78 @@ func ghToken() (string, error) {
 	return token, nil
 }
 
+func isRetryable(statusCode int) bool {
+	return statusCode == 502 || statusCode == 503 || statusCode == 504
+}
+
 func ghRequest(method, url string, body io.Reader) ([]byte, error) {
 	token, err := ghToken()
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(method, url, body)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
+	// Buffer body so we can retry
+	var bodyBytes []byte
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode == 401 {
-		return nil, fmt.Errorf("authentication failed (HTTP 401): is your GITHUB_TOKEN valid?")
-	}
-	if resp.StatusCode == 403 || resp.StatusCode == 429 {
-		return nil, fmt.Errorf("rate limited by GitHub (HTTP %d): wait a minute and try again", resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := string(data)
-		if len(msg) > 200 {
-			msg = msg[:200] + "..."
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("reading request body: %w", err)
 		}
-		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, msg)
 	}
 
-	return data, nil
+	var lastErr error
+	for attempt := range maxRetries {
+		var bodyReader io.Reader
+		if bodyBytes != nil {
+			bodyReader = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequest(method, url, bodyReader)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		if bodyBytes != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("HTTP request failed: %w", err)
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+			continue
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		if resp.StatusCode == 401 {
+			return nil, fmt.Errorf("authentication failed (HTTP 401): is your GITHUB_TOKEN valid?")
+		}
+		if resp.StatusCode == 403 || resp.StatusCode == 429 {
+			return nil, fmt.Errorf("rate limited by GitHub (HTTP %d): wait a minute and try again", resp.StatusCode)
+		}
+		if isRetryable(resp.StatusCode) {
+			lastErr = fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			msg := string(data)
+			if len(msg) > 200 {
+				msg = msg[:200] + "..."
+			}
+			return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, msg)
+		}
+
+		return data, nil
+	}
+
+	return nil, fmt.Errorf("request failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 // ghRequestPaginated fetches all pages of a paginated REST endpoint.
@@ -300,8 +332,10 @@ func fetchOpenPRs(org string, limit int) ([]PRNode, error) {
 	var allPRs []PRNode
 	searchQuery := fmt.Sprintf("is:pr is:open sort:updated org:%s", org)
 	var cursor *string
+	page := 0
 
 	for {
+		page++
 		variables := map[string]interface{}{
 			"searchQuery": searchQuery,
 			"cursor":      cursor,
@@ -313,7 +347,7 @@ func fetchOpenPRs(org string, limit int) ([]PRNode, error) {
 
 		out, err := ghRequest("POST", "https://api.github.com/graphql", bytes.NewReader(payload))
 		if err != nil {
-			return nil, fmt.Errorf("GraphQL query failed: %w", err)
+			return nil, fmt.Errorf("GraphQL query failed (page %d): %w", page, err)
 		}
 
 		var result searchResult
@@ -344,4 +378,61 @@ func fetchOpenPRs(org string, limit int) ([]PRNode, error) {
 	}
 
 	return allPRs, nil
+}
+
+// fetchOpenPRsStreaming fetches open PRs page by page, sending cumulative
+// results on ch after each page. The channel is closed when done.
+func fetchOpenPRsStreaming(org string, limit int, ch chan<- []PRNode) error {
+	defer close(ch)
+	var allPRs []PRNode
+	searchQuery := fmt.Sprintf("is:pr is:open sort:updated org:%s", org)
+	var cursor *string
+	page := 0
+
+	for {
+		page++
+		variables := map[string]interface{}{
+			"searchQuery": searchQuery,
+			"cursor":      cursor,
+		}
+		payload, _ := json.Marshal(map[string]interface{}{
+			"query":     graphQLQuery,
+			"variables": variables,
+		})
+
+		out, err := ghRequest("POST", "https://api.github.com/graphql", bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Errorf("GraphQL query failed (page %d): %w", page, err)
+		}
+
+		var result searchResult
+		if err := json.Unmarshal(out, &result); err != nil {
+			return fmt.Errorf("parsing GraphQL response: %w", err)
+		}
+		if len(result.Errors) > 0 {
+			return fmt.Errorf("GraphQL error: %s", result.Errors[0].Message)
+		}
+
+		for _, node := range result.Data.Search.Nodes {
+			if node.Number == 0 {
+				continue
+			}
+			allPRs = append(allPRs, node)
+		}
+
+		if limit > 0 && len(allPRs) >= limit {
+			allPRs = allPRs[:limit]
+			ch <- append([]PRNode(nil), allPRs...)
+			return nil
+		}
+
+		// Send cumulative snapshot
+		ch <- append([]PRNode(nil), allPRs...)
+
+		if !result.Data.Search.PageInfo.HasNextPage {
+			return nil
+		}
+		c := result.Data.Search.PageInfo.EndCursor
+		cursor = &c
+	}
 }

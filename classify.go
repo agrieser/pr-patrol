@@ -281,21 +281,7 @@ func classifyAll(prs []PRNode, me string, includeSelf bool, filter func(PRNode) 
 		})
 	}
 
-	switch sortMode {
-	case SortDate:
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].LastActivity.After(result[j].LastActivity)
-		})
-	default:
-		sort.Slice(result, func(i, j int) bool {
-			pi, pj := sortPriority(result[i]), sortPriority(result[j])
-			if pi != pj {
-				return pi < pj
-			}
-			return result[i].CreatedAt.After(result[j].CreatedAt)
-		})
-	}
-
+	sortWithDraftsLast(result, sortMode, sortPriority)
 	return result
 }
 
@@ -311,6 +297,29 @@ func authorSortPriority(pr ClassifiedPR) int {
 		return 3
 	}
 	return 4
+}
+
+func sortWithDraftsLast(result []ClassifiedPR, sortMode SortMode, priorityFn func(ClassifiedPR) int) {
+	switch sortMode {
+	case SortDate:
+		sort.Slice(result, func(i, j int) bool {
+			if result[i].IsDraft != result[j].IsDraft {
+				return !result[i].IsDraft
+			}
+			return result[i].LastActivity.After(result[j].LastActivity)
+		})
+	default:
+		sort.Slice(result, func(i, j int) bool {
+			if result[i].IsDraft != result[j].IsDraft {
+				return !result[i].IsDraft
+			}
+			pi, pj := priorityFn(result[i]), priorityFn(result[j])
+			if pi != pj {
+				return pi < pj
+			}
+			return result[i].CreatedAt.After(result[j].CreatedAt)
+		})
+	}
 }
 
 func classifyAllAuthor(prs []PRNode, me string, sortMode SortMode) []ClassifiedPR {
@@ -335,20 +344,6 @@ func classifyAllAuthor(prs []PRNode, me string, sortMode SortMode) []ClassifiedP
 		})
 	}
 
-	switch sortMode {
-	case SortDate:
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].LastActivity.After(result[j].LastActivity)
-		})
-	default:
-		sort.Slice(result, func(i, j int) bool {
-			pi, pj := authorSortPriority(result[i]), authorSortPriority(result[j])
-			if pi != pj {
-				return pi < pj
-			}
-			return result[i].CreatedAt.After(result[j].CreatedAt)
-		})
-	}
-
+	sortWithDraftsLast(result, sortMode, authorSortPriority)
 	return result
 }

@@ -6,10 +6,22 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
 
 var (
 	styleGreen  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -61,12 +73,15 @@ type model struct {
 	showAuthor bool
 	sortMode   SortMode
 
-	loading   bool
-	org       string
-	limit     int
-	errMsg    string
-	showHelp  bool
-	statusMsg string
+	loading      bool
+	loadingCount int
+	spinnerFrame int
+	fetchID      int
+	org          string
+	limit        int
+	errMsg       string
+	showHelp     bool
+	statusMsg    string
 }
 
 type modelConfig struct {
@@ -83,14 +98,19 @@ type modelConfig struct {
 	dismissedRepos map[string]bool
 }
 
-type dataLoadedMsg struct {
+type fetchPageMsg struct {
 	prs     []PRNode
 	me      string
 	myTeams map[string]bool
+	done    bool
+	fetchID int
+	ch      <-chan []PRNode
+	errCh   <-chan error
 }
 
 type fetchErrMsg struct {
-	err error
+	err     error
+	fetchID int
 }
 
 type commentPostedMsg struct {
@@ -117,21 +137,78 @@ func openBrowser(url string) error {
 	}
 }
 
-func fetchDataCmd(org string, limit int) tea.Cmd {
+// startFetchCmd fetches user+teams in parallel, then streams PR pages on a channel.
+// Returns the first fetchPageMsg once the first page (and user/teams) are ready.
+func startFetchCmd(org string, limit int, fetchID int) tea.Cmd {
 	return func() tea.Msg {
-		me, err := fetchCurrentUser()
-		if err != nil {
-			return fetchErrMsg{err}
+		var me string
+		var myTeams map[string]bool
+		var userErr, teamsErr error
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			me, userErr = fetchCurrentUser()
+		}()
+		go func() {
+			defer wg.Done()
+			myTeams, teamsErr = fetchUserTeams(org)
+			if teamsErr != nil {
+				myTeams = make(map[string]bool)
+			}
+		}()
+		wg.Wait()
+
+		if userErr != nil {
+			return fetchErrMsg{err: userErr, fetchID: fetchID}
 		}
-		prs, err := fetchOpenPRs(org, limit)
-		if err != nil {
-			return fetchErrMsg{err}
+
+		prCh := make(chan []PRNode, 1)
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- fetchOpenPRsStreaming(org, limit, prCh)
+		}()
+
+		// Wait for first page
+		prs, ok := <-prCh
+		if !ok {
+			// Channel closed immediately — check for error
+			if err := <-errCh; err != nil {
+				return fetchErrMsg{err: err, fetchID: fetchID}
+			}
+			return fetchPageMsg{
+				me: me, myTeams: myTeams,
+				done: true, fetchID: fetchID,
+			}
 		}
-		myTeams, err := fetchUserTeams(org)
-		if err != nil {
-			myTeams = make(map[string]bool)
+		return fetchPageMsg{
+			prs: prs, me: me, myTeams: myTeams,
+			done: false, fetchID: fetchID, ch: prCh, errCh: errCh,
 		}
-		return dataLoadedMsg{prs: prs, me: me, myTeams: myTeams}
+	}
+}
+
+// waitForPageCmd reads the next page from the channel.
+func waitForPageCmd(ch <-chan []PRNode, errCh <-chan error, me string, myTeams map[string]bool, fetchID int) tea.Cmd {
+	return func() tea.Msg {
+		prs, ok := <-ch
+		if !ok {
+			// Channel closed — check for streaming error
+			if errCh != nil {
+				if err := <-errCh; err != nil {
+					return fetchErrMsg{err: err, fetchID: fetchID}
+				}
+			}
+			return fetchPageMsg{
+				me: me, myTeams: myTeams,
+				done: true, fetchID: fetchID,
+			}
+		}
+		return fetchPageMsg{
+			prs: prs, me: me, myTeams: myTeams,
+			done: false, fetchID: fetchID, ch: ch, errCh: errCh,
+		}
 	}
 }
 
@@ -192,24 +269,46 @@ func (m *model) reclassify() {
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.HideCursor}
 	if m.loading {
-		cmds = append(cmds, fetchDataCmd(m.org, m.limit))
+		cmds = append(cmds, startFetchCmd(m.org, m.limit, m.fetchID), tickCmd())
 	}
 	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case dataLoadedMsg:
-		m.loading = false
+	case fetchPageMsg:
+		if msg.fetchID != m.fetchID {
+			return m, nil // stale fetch, ignore
+		}
 		m.errMsg = ""
-		m.rawPRs = msg.prs
 		m.me = msg.me
 		m.myTeams = msg.myTeams
-		m.reclassify()
-		m.cursor = 0
+		if msg.prs != nil {
+			m.rawPRs = msg.prs
+			m.loadingCount = len(msg.prs)
+			m.reclassify()
+		}
+		// Clamp cursor
+		vis := m.visibleItems()
+		if m.cursor >= len(vis) && m.cursor > 0 {
+			m.cursor = len(vis) - 1
+		}
+		if msg.done {
+			m.loading = false
+			return m, nil
+		}
+		return m, waitForPageCmd(msg.ch, msg.errCh, msg.me, msg.myTeams, msg.fetchID)
 	case fetchErrMsg:
+		if msg.fetchID != m.fetchID {
+			return m, nil
+		}
 		m.loading = false
 		m.errMsg = msg.err.Error()
+	case tickMsg:
+		if m.loading {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, tickCmd()
+		}
 	case commentPostedMsg:
 		if msg.err != nil {
 			m.statusMsg = fmt.Sprintf("Failed to comment on %s#%d: %v", msg.repo, msg.number, msg.err)
@@ -267,9 +366,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		case "r":
 			if m.org != "" {
+				m.fetchID++
 				m.loading = true
+				m.loadingCount = 0
+				m.spinnerFrame = 0
 				m.errMsg = ""
-				return m, fetchDataCmd(m.org, m.limit)
+				return m, tea.Batch(startFetchCmd(m.org, m.limit, m.fetchID), tickCmd())
 			}
 		case "d":
 			if pr, ok := m.selectedPR(); ok {
@@ -302,9 +404,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.loading {
-		return "Fetching PRs...\n"
-	}
 	if m.errMsg != "" {
 		msg := strings.ReplaceAll(m.errMsg, "\n", " ")
 		if len(msg) > 200 {
@@ -318,7 +417,7 @@ func (m model) View() string {
 	}
 
 	vis := m.visibleItems()
-	if len(vis) == 0 {
+	if len(vis) == 0 && !m.loading {
 		if m.showAuthor {
 			return "No open PRs authored by you. Press a to switch to reviewer mode.\n"
 		}
@@ -326,7 +425,9 @@ func (m model) View() string {
 	}
 
 	var b strings.Builder
-	maxLines := m.height - 3 // reserve for header + help bar
+	// Layout: 1 header + N items + 1 status + 1 help = height
+	// Reserve 3 lines for header, status bar, and help bar
+	maxLines := m.height - 3
 	if maxLines <= 0 {
 		maxLines = len(vis)
 	}
@@ -359,6 +460,7 @@ func (m model) View() string {
 	if end > len(vis) {
 		end = len(vis)
 	}
+	itemsRendered := end - start
 
 	for i := start; i < end; i++ {
 		pr := vis[i]
@@ -393,11 +495,21 @@ func (m model) View() string {
 
 		var coloredRepo, coloredAuthor, line string
 		if selected {
-			coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
-			coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
+			if pr.IsDraft {
+				coloredRepo = styleDim.Inherit(selBg).Render(repoCol)
+				coloredAuthor = styleDim.Inherit(selBg).Render(authorCol)
+			} else {
+				coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
+				coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
+			}
 			sep := selBg.Render("  ")
 			ageRendered := styleDim.Inherit(selBg).Render(ageCol)
-			titleRendered := selBg.Render(titleText)
+			var titleRendered string
+			if pr.IsDraft {
+				titleRendered = styleDim.Inherit(selBg).Render(titleText)
+			} else {
+				titleRendered = selBg.Render(titleText)
+			}
 			line = indicators + selBg.Render(" ") + coloredRepo + sep + coloredAuthor + sep + ageRendered + sep + titleRendered
 			// Pad to full width
 			if m.width > 0 {
@@ -406,6 +518,11 @@ func (m model) View() string {
 					line += selBg.Render(strings.Repeat(" ", m.width-lineLen))
 				}
 			}
+		} else if pr.IsDraft {
+			coloredRepo = styleDim.Render(repoCol)
+			coloredAuthor = styleDim.Render(authorCol)
+			ageRendered := styleDim.Render(ageCol)
+			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, styleDim.Render(titleText))
 		} else {
 			coloredRepo = nameColor(pr.RepoName).Render(repoCol)
 			coloredAuthor = nameColor(pr.Author).Render(authorCol)
@@ -414,6 +531,14 @@ func (m model) View() string {
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
+	}
+
+	// Pad to fill terminal height: pin status+help to bottom
+	if m.height > 0 {
+		pad := maxLines - itemsRendered
+		for i := 0; i < pad; i++ {
+			b.WriteString("\n")
+		}
 	}
 
 	// Help bar
@@ -446,7 +571,17 @@ func (m model) View() string {
 			authoredLabel, assignedLabel, sortLabel, authorLabel,
 		))
 	}
-	if m.statusMsg != "" {
+	if m.loading {
+		spin := styleCyan.Render(spinnerFrames[m.spinnerFrame])
+		var loadText string
+		if m.loadingCount > 0 {
+			loadText = fmt.Sprintf("Fetching PRs... %d found", m.loadingCount)
+		} else {
+			loadText = "Fetching PRs..."
+		}
+		b.WriteString(fmt.Sprintf("%s %s", spin, helpStyle.Render(loadText)))
+		b.WriteString("\n")
+	} else if m.statusMsg != "" {
 		b.WriteString(styleCyan.Render(m.statusMsg))
 		b.WriteString("\n")
 	} else {
@@ -523,6 +658,18 @@ func withBg(s lipgloss.Style, bg *lipgloss.Style) lipgloss.Style {
 
 func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) string {
 	var col1, col2, col3 string
+
+	// Draft PRs (non-author mode): dim all indicators
+	if pr.IsDraft && !authorMode {
+		col1 = withBg(styleDim, bg).Render("·")
+		col2 = withBg(styleDim, bg).Render("·")
+		col3 = withBg(styleDim, bg).Render("·")
+		sep := " "
+		if bg != nil {
+			sep = bg.Render(" ")
+		}
+		return col1 + sep + col2 + sep + col3
+	}
 
 	if authorMode {
 		if pr.IsDraft {

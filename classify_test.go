@@ -584,6 +584,38 @@ func TestClassifyAll_DraftField(t *testing.T) {
 	}
 }
 
+func TestClassifyAll_DraftsSortLast(t *testing.T) {
+	draft := makePR(withAuthor("alice"), withURL("https://github.com/org/repo/pull/1"))
+	draft.IsDraft = true
+	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
+
+	result := classifyAll([]PRNode{draft, normal}, "me", false, nil, SortPriority)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 PRs, got %d", len(result))
+	}
+	if result[0].IsDraft {
+		t.Error("expected non-draft first")
+	}
+	if !result[1].IsDraft {
+		t.Error("expected draft last")
+	}
+}
+
+func TestClassifyAll_DraftsSortLastDateMode(t *testing.T) {
+	draft := makePR(withAuthor("alice"), withURL("https://github.com/org/repo/pull/1"))
+	draft.IsDraft = true
+	draft.CreatedAt = time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC) // newer
+	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
+
+	result := classifyAll([]PRNode{draft, normal}, "me", false, nil, SortDate)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 PRs, got %d", len(result))
+	}
+	if result[0].IsDraft {
+		t.Error("expected non-draft first even though draft is newer")
+	}
+}
+
 func TestClassifyAll_IncludesApproved(t *testing.T) {
 	reviewTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
 	commitBefore := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)

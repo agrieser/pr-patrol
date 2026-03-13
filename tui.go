@@ -29,7 +29,6 @@ var (
 	styleYellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleCyan   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	styleDim  = lipgloss.NewStyle().Faint(true)
-	styleBold = lipgloss.NewStyle().Bold(true)
 	styleWhite  = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	styleOrange = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
@@ -570,15 +569,11 @@ func (m model) View() string {
 			}
 		}
 
-		bold := pr.IsCodeOwner && !pr.IsDraft
 		var coloredRepo, coloredAuthor, line string
 		if selected {
 			if pr.IsDraft {
 				coloredRepo = styleDim.Inherit(selBg).Render(repoCol)
 				coloredAuthor = styleDim.Inherit(selBg).Render(authorCol)
-			} else if bold {
-				coloredRepo = nameColor(pr.RepoName).Bold(true).Inherit(selBg).Render(repoCol)
-				coloredAuthor = nameColor(pr.Author).Bold(true).Inherit(selBg).Render(authorCol)
 			} else {
 				coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
 				coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
@@ -588,8 +583,6 @@ func (m model) View() string {
 			var titleRendered string
 			if pr.IsDraft {
 				titleRendered = styleDim.Inherit(selBg).Render(titleText)
-			} else if bold {
-				titleRendered = styleBold.Inherit(selBg).Render(titleText)
 			} else {
 				titleRendered = selBg.Render(titleText)
 			}
@@ -606,11 +599,6 @@ func (m model) View() string {
 			coloredAuthor = styleDim.Render(authorCol)
 			ageRendered := styleDim.Render(ageCol)
 			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, styleDim.Render(titleText))
-		} else if bold {
-			coloredRepo = nameColor(pr.RepoName).Bold(true).Render(repoCol)
-			coloredAuthor = nameColor(pr.Author).Bold(true).Render(authorCol)
-			ageRendered := styleDim.Render(ageCol)
-			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, styleBold.Render(titleText))
 		} else {
 			coloredRepo = nameColor(pr.RepoName).Render(repoCol)
 			coloredAuthor = nameColor(pr.Author).Render(authorCol)

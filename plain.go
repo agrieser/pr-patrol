@@ -26,7 +26,7 @@ func computeColumns(items []ClassifiedPR) colWidths {
 }
 
 func plainIndicators(pr ClassifiedPR) string {
-	var col1, col2, col3 string
+	var col1, col2, col3, col4 string
 
 	switch pr.MyReview {
 	case MyNone:
@@ -65,7 +65,20 @@ func plainIndicators(pr ClassifiedPR) string {
 		col3 = "·"
 	}
 
-	return col1 + " " + col2 + " " + col3
+	switch pr.Status {
+	case StatusPass:
+		col4 = "✓"
+	case StatusFail:
+		col4 = "✗"
+	case StatusPending:
+		col4 = "●"
+	case StatusConflict:
+		col4 = "!"
+	default:
+		col4 = "·"
+	}
+
+	return col1 + " " + col2 + " " + col3 + " " + col4
 }
 
 func formatAge(t time.Time) string {

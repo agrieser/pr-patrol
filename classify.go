@@ -36,6 +36,16 @@ const (
 	ActMineStale   ActivityIndicator = "mine_stale"
 )
 
+type StatusIndicator string
+
+const (
+	StatusNone     StatusIndicator = "none"
+	StatusPass     StatusIndicator = "pass"
+	StatusFail     StatusIndicator = "fail"
+	StatusPending  StatusIndicator = "pending"
+	StatusConflict StatusIndicator = "conflict"
+)
+
 type SortMode string
 
 const (
@@ -47,6 +57,7 @@ type ClassifiedPR struct {
 	MyReview     MyReviewIndicator
 	OthReview    OthReviewIndicator
 	Activity     ActivityIndicator
+	Status       StatusIndicator
 	IsDraft     bool
 	IsAuthor    bool
 	IsCodeOwner bool
@@ -229,6 +240,30 @@ func computeLastActivity(pr PRNode) time.Time {
 	return latest
 }
 
+func computeStatus(pr PRNode) StatusIndicator {
+	// Conflict takes highest priority
+	if pr.Mergeable == "CONFLICTING" {
+		return StatusConflict
+	}
+
+	// CI status from head commit
+	if len(pr.Commits.Nodes) > 0 {
+		rollup := pr.Commits.Nodes[0].Commit.StatusCheckRollup
+		if rollup != nil {
+			switch rollup.State {
+			case "FAILURE", "ERROR":
+				return StatusFail
+			case "PENDING", "EXPECTED":
+				return StatusPending
+			case "SUCCESS":
+				return StatusPass
+			}
+		}
+	}
+
+	return StatusNone
+}
+
 func isRequestedReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
 	for _, rr := range pr.ReviewRequests.Nodes {
 		if rr.RequestedReviewer.Login == me {
@@ -287,6 +322,7 @@ func classifyAll(prs []PRNode, me string, myTeams map[string]bool, filter func(P
 			MyReview:     computeMyReview(pr, me),
 			OthReview:    computeOthReview(pr, me),
 			Activity:     computeActivity(pr, me),
+			Status:       computeStatus(pr),
 			IsDraft:      pr.IsDraft,
 			IsAuthor:     pr.Author.Login == me,
 			IsCodeOwner:  isCodeOwnerReviewer(pr, me, myTeams),
@@ -352,6 +388,7 @@ func classifyAllAuthor(prs []PRNode, me string, sortMode SortMode) []ClassifiedP
 			MyReview:     MyNone,
 			OthReview:    computeOthReview(pr, me),
 			Activity:     computeAuthorActivity(pr),
+			Status:       computeStatus(pr),
 			IsDraft:      pr.IsDraft,
 			RepoName:     pr.Repository.Name,
 			RepoFullName: pr.Repository.NameWithOwner,

@@ -512,18 +512,15 @@ func (m model) View() string {
 	}
 
 	// Header
-	header := "👤 👥 💬"
-	// Pad to align age label over the age column
 	ageLabel := "age"
 	if m.sortMode == SortDate {
 		ageLabel = "act"
 	}
-	headerPad := 6 + m.cols.repo + 2 + m.cols.author + 2 // indicators + space + repo + sep + author + sep
-	padNeeded := headerPad - lipgloss.Width(header)
-	if padNeeded < 1 {
-		padNeeded = 1
-	}
-	headerLine := header + strings.Repeat(" ", padNeeded) + fmt.Sprintf("%4s", ageLabel)
+	headerLine := fmt.Sprintf("I O C S %-*s  %-*s  %4s  %s",
+		m.cols.repo, "repo",
+		m.cols.author, "author",
+		ageLabel,
+		"title")
 	b.WriteString(helpStyle.Render(headerLine))
 	b.WriteString("\n")
 
@@ -556,7 +553,7 @@ func (m model) View() string {
 		ageCol := fmt.Sprintf("%4s", formatAge(ageTime))
 
 		// Build plain line for truncation check, then colorized version for display
-		plainLine := fmt.Sprintf("%s %s  %s  %s  %s", "     ", repoCol, authorCol, ageCol, pr.Title)
+		plainLine := fmt.Sprintf("%s %s  %s  %s  %s", "       ", repoCol, authorCol, ageCol, pr.Title)
 		titleText := pr.Title
 		if m.width > 0 && len(plainLine) > m.width {
 			// Truncate title to fit
@@ -669,7 +666,7 @@ func (m model) View() string {
 
 func (m model) renderLegend() string {
 	var b strings.Builder
-	b.WriteString("Column 1 — Your Review:\n")
+	b.WriteString("I — Your Review:\n")
 	b.WriteString(fmt.Sprintf("  %s  You approved\n", styleGreen.Render("✓")))
 	b.WriteString(fmt.Sprintf("  %s  You requested changes\n", styleRed.Render("✗")))
 	b.WriteString(fmt.Sprintf("  %s  You left review comments\n", styleYellow.Render("◆")))
@@ -677,17 +674,24 @@ func (m model) renderLegend() string {
 	b.WriteString(fmt.Sprintf("  %s  Codeowner review needed\n", styleOrange.Render("·")))
 	b.WriteString("  Color: bright = current, gray = stale\n")
 	b.WriteString("\n")
-	b.WriteString("Column 2 — Others' Reviews:\n")
+	b.WriteString("O — Others' Reviews:\n")
 	b.WriteString(fmt.Sprintf("  %s  All approved\n", styleGreen.Render("✓")))
 	b.WriteString(fmt.Sprintf("  %s  Changes requested\n", styleRed.Render("✗")))
 	b.WriteString(fmt.Sprintf("  %s  Mixed reviews\n", styleYellow.Render("±")))
 	b.WriteString(fmt.Sprintf("  %s  No reviews yet\n", styleDim.Render("·")))
 	b.WriteString("\n")
-	b.WriteString("Column 3 — Comments:\n")
+	b.WriteString("C — Comments:\n")
 	b.WriteString(fmt.Sprintf("  %s  You commented\n", styleCyan.Render("●")))
 	b.WriteString(fmt.Sprintf("  %s  Others commented\n", styleWhite.Render("○")))
 	b.WriteString(fmt.Sprintf("  %s  No comments\n", styleDim.Render("·")))
 	b.WriteString("  Color: bright = fresh, gray = stale\n")
+	b.WriteString("\n")
+	b.WriteString("S — PR Status:\n")
+	b.WriteString(fmt.Sprintf("  %s  CI passing, no conflicts\n", styleGreen.Render("✓")))
+	b.WriteString(fmt.Sprintf("  %s  CI failing\n", styleRed.Render("✗")))
+	b.WriteString(fmt.Sprintf("  %s  CI pending\n", styleYellow.Render("●")))
+	b.WriteString(fmt.Sprintf("  %s  Merge conflict\n", styleOrange.Render("!")))
+	b.WriteString(fmt.Sprintf("  %s  No status checks\n", styleDim.Render("·")))
 	b.WriteString("\n")
 	b.WriteString("Keys:\n")
 	b.WriteString("  j/k     Navigate up/down\n")
@@ -751,18 +755,19 @@ func withBg(s lipgloss.Style, bg *lipgloss.Style) lipgloss.Style {
 }
 
 func formatIndicators(pr ClassifiedPR, bg *lipgloss.Style) string {
-	var col1, col2, col3 string
+	var col1, col2, col3, col4 string
 
 	// Draft PRs: dim all indicators
 	if pr.IsDraft {
 		col1 = withBg(styleDim, bg).Render("·")
 		col2 = withBg(styleDim, bg).Render("·")
 		col3 = withBg(styleDim, bg).Render("·")
+		col4 = withBg(styleDim, bg).Render("·")
 		sep := " "
 		if bg != nil {
 			sep = bg.Render(" ")
 		}
-		return col1 + sep + col2 + sep + col3
+		return col1 + sep + col2 + sep + col3 + sep + col4
 	}
 
 	switch pr.MyReview {
@@ -816,9 +821,22 @@ func formatIndicators(pr ClassifiedPR, bg *lipgloss.Style) string {
 		col3 = withBg(styleDim, bg).Render("·")
 	}
 
+	switch pr.Status {
+	case StatusPass:
+		col4 = withBg(styleGreen, bg).Render("✓")
+	case StatusFail:
+		col4 = withBg(styleRed, bg).Render("✗")
+	case StatusPending:
+		col4 = withBg(styleYellow, bg).Render("●")
+	case StatusConflict:
+		col4 = withBg(styleOrange, bg).Render("!")
+	default:
+		col4 = withBg(styleDim, bg).Render("·")
+	}
+
 	sep := " "
 	if bg != nil {
 		sep = bg.Render(" ")
 	}
-	return col1 + sep + col2 + sep + col3
+	return col1 + sep + col2 + sep + col3 + sep + col4
 }

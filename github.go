@@ -34,7 +34,9 @@ type PRNode struct {
 	Comments struct {
 		Nodes []CommentNode `json:"nodes"`
 	} `json:"comments"`
-	Commits struct {
+	Mergeable      string `json:"mergeable"`
+	ReviewDecision string `json:"reviewDecision"`
+	Commits        struct {
 		Nodes []CommitNode `json:"nodes"`
 	} `json:"commits"`
 	ReviewRequests struct {
@@ -59,7 +61,10 @@ type CommentNode struct {
 
 type CommitNode struct {
 	Commit struct {
-		CommittedDate time.Time `json:"committedDate"`
+		CommittedDate     time.Time `json:"committedDate"`
+		StatusCheckRollup *struct {
+			State string `json:"state"`
+		} `json:"statusCheckRollup"`
 	} `json:"commit"`
 }
 
@@ -99,6 +104,8 @@ const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
         number
         createdAt
         isDraft
+        mergeable
+        reviewDecision
         author { login }
         repository { name nameWithOwner }
         reviews(last: 100) {
@@ -116,7 +123,10 @@ const graphQLQuery = `query($searchQuery: String!, $cursor: String) {
         }
         commits(last: 1) {
           nodes {
-            commit { committedDate }
+            commit {
+              committedDate
+              statusCheckRollup { state }
+            }
           }
         }
         reviewRequests(first: 100) {

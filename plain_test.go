@@ -34,12 +34,12 @@ func TestRenderPlain(t *testing.T) {
 	}
 
 	// Columns are padded: repo to 6 (api#42), author to 5 (alice), age 4 chars right-aligned
-	expected0 := "· ✓ ● api#42  alice     -  Add endpoint"
+	expected0 := "· ✓ ● · api#42  alice     -  Add endpoint"
 	if lines[0] != expected0 {
 		t.Fatalf("line 0:\ngot:  %q\nwant: %q", lines[0], expected0)
 	}
 
-	expected1 := "✓ · · web#7   bob       -  Fix layout"
+	expected1 := "✓ · · · web#7   bob       -  Fix layout"
 	if lines[1] != expected1 {
 		t.Fatalf("line 1:\ngot:  %q\nwant: %q", lines[1], expected1)
 	}

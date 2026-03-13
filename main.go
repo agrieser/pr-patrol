@@ -14,7 +14,6 @@ var version = "dev"
 func main() {
 	org := pflag.String("org", "", "GitHub organization (or set GITHUB_ORG)")
 	plain := pflag.Bool("plain", false, "Plain text output (no TUI)")
-	self := pflag.Bool("authored", false, "Include PRs you authored")
 	mine := pflag.Bool("assigned", false, "Only show PRs assigned to you for review")
 	author := pflag.Bool("author", false, "Show your own PRs and their review status")
 	limit := pflag.Int("limit", 500, "Maximum number of PRs to fetch")
@@ -117,7 +116,7 @@ func main() {
 				return isRequestedReviewer(pr, me, myTeams)
 			}
 		}
-		classified := classifyAll(prs, me, *self, filter, SortPriority)
+		classified := classifyAll(prs, me, filter, SortPriority)
 		classified = filterDismissedRepos(classified, dismissedRepoSet)
 		if len(classified) == 0 {
 			fmt.Fprintln(os.Stderr, "No PRs pending your review.")
@@ -132,9 +131,7 @@ func main() {
 		loading:        true,
 		org:            *org,
 		limit:          *limit,
-		showAuthored:   *self,
 		showAssigned:   *mine,
-		showAuthor:     *author,
 		dismissedRepos: dismissedRepoSet,
 	}), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

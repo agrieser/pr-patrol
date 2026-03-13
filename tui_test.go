@@ -30,7 +30,6 @@ func testModelConfig() modelConfig {
 		},
 		me:       "me",
 		myTeams:  make(map[string]bool),
-		showAuthored: false,
 		showAssigned: false,
 	}
 }
@@ -53,9 +52,9 @@ func TestModel_Init(t *testing.T) {
 	if len(m.dismissed) != 0 {
 		t.Fatalf("expected empty dismissed map")
 	}
-	// Should have 3 items (self-authored excluded)
-	if len(m.items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(m.items))
+	// Should have 4 items (including self-authored)
+	if len(m.items) != 4 {
+		t.Fatalf("expected 4 items, got %d", len(m.items))
 	}
 }
 
@@ -86,8 +85,8 @@ func TestModel_NavigateDownAtBottom(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		m = sendKey(m, 'j')
 	}
-	if m.(model).cursor != 2 {
-		t.Fatalf("expected cursor clamped at 2, got %d", m.(model).cursor)
+	if m.(model).cursor != 3 {
+		t.Fatalf("expected cursor clamped at 3, got %d", m.(model).cursor)
 	}
 }
 
@@ -99,8 +98,8 @@ func TestModel_Dismiss(t *testing.T) {
 		t.Fatal("expected first item to be dismissed by URL")
 	}
 	vis := m.visibleItems()
-	if len(vis) != 2 {
-		t.Fatalf("expected 2 visible items, got %d", len(vis))
+	if len(vis) != 3 {
+		t.Fatalf("expected 3 visible items, got %d", len(vis))
 	}
 }
 
@@ -122,8 +121,8 @@ func TestModel_DismissRepo(t *testing.T) {
 	cfg.rawPRs[1].Repository.Name = "shared-repo"
 	cfg.rawPRs[2].Repository.Name = "other-repo"
 	m := newModel(cfg)
-	if len(m.visibleItems()) != 3 {
-		t.Fatalf("expected 3 items initially, got %d", len(m.visibleItems()))
+	if len(m.visibleItems()) != 4 {
+		t.Fatalf("expected 4 items initially, got %d", len(m.visibleItems()))
 	}
 
 	// Find the repo name of the first visible item (sort order may vary)
@@ -183,29 +182,11 @@ func TestModel_Quit(t *testing.T) {
 	}
 }
 
-func TestModel_ToggleAuthored(t *testing.T) {
+func TestModel_IncludesAuthoredPRs(t *testing.T) {
 	m := newModel(testModelConfig())
-	initialCount := len(m.visibleItems())
-	if initialCount != 3 {
-		t.Fatalf("expected 3 items initially, got %d", initialCount)
-	}
-
-	// Toggle self on — should now include self-authored PR
-	m = sendKey(m, 's')
-	if !m.showAuthored {
-		t.Fatal("expected showAuthored to be true after toggle")
-	}
+	// All 4 PRs should be visible including self-authored
 	if len(m.visibleItems()) != 4 {
-		t.Fatalf("expected 4 items with self included, got %d", len(m.visibleItems()))
-	}
-
-	// Toggle self off — back to original
-	m = sendKey(m, 's')
-	if m.showAuthored {
-		t.Fatal("expected showAuthored to be false after second toggle")
-	}
-	if len(m.visibleItems()) != 3 {
-		t.Fatalf("expected 3 items after toggling self off, got %d", len(m.visibleItems()))
+		t.Fatalf("expected 4 items (including self-authored), got %d", len(m.visibleItems()))
 	}
 }
 
@@ -221,7 +202,7 @@ func TestModel_ToggleAssigned(t *testing.T) {
 	m := newModel(cfg)
 
 	// Toggle assigned on — only the PR with review request for "me"
-	m = sendKey(m, 'f')
+	m = sendKey(m, 'a')
 	if !m.showAssigned {
 		t.Fatal("expected showAssigned to be true")
 	}
@@ -229,10 +210,10 @@ func TestModel_ToggleAssigned(t *testing.T) {
 		t.Fatalf("expected 1 item with assigned filter, got %d", len(m.visibleItems()))
 	}
 
-	// Toggle assigned off — all non-authored PRs again
-	m = sendKey(m, 'f')
-	if len(m.visibleItems()) != 3 {
-		t.Fatalf("expected 3 items after turning assigned off, got %d", len(m.visibleItems()))
+	// Toggle assigned off — all PRs again
+	m = sendKey(m, 'a')
+	if len(m.visibleItems()) != 4 {
+		t.Fatalf("expected 4 items after turning assigned off, got %d", len(m.visibleItems()))
 	}
 }
 
@@ -248,20 +229,11 @@ func TestModel_HelpBarShowsToggleState(t *testing.T) {
 	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
 
 	view := m.View()
-	if !strings.Contains(view, "authored:off") {
-		t.Error("expected help bar to show authored:off")
-	}
 	if !strings.Contains(view, "assigned:off") {
 		t.Error("expected help bar to show assigned:off")
 	}
 
-	m = sendKey(m, 's')
-	view = m.View()
-	if !strings.Contains(view, "authored:on") {
-		t.Error("expected help bar to show authored:on after toggle")
-	}
-
-	m = sendKey(m, 'f')
+	m = sendKey(m, 'a')
 	view = m.View()
 	if !strings.Contains(view, "assigned:on") {
 		t.Error("expected help bar to show assigned:on after toggle")
@@ -275,8 +247,8 @@ func TestModel_EmptyFilterShowsMessage(t *testing.T) {
 	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
 
 	view := m.View()
-	if !strings.Contains(view, "s/f") {
-		t.Error("expected empty view to hint about toggle keys")
+	if !strings.Contains(view, "R to reset") {
+		t.Error("expected empty view to hint about reset")
 	}
 }
 
@@ -294,9 +266,9 @@ func TestModel_DismissPersistsAcrossToggle(t *testing.T) {
 		t.Fatal("expected one fewer visible item after dismiss")
 	}
 
-	// Toggle self on and off — dismissal should persist
-	m = sendKey(m, 's')
-	m = sendKey(m, 's')
+	// Toggle assigned on and off — dismissal should persist
+	m = sendKey(m, 'a')
+	m = sendKey(m, 'a')
 	if !m.dismissed[dismissedURL] {
 		t.Fatal("expected dismissal to persist across toggle")
 	}
@@ -311,64 +283,101 @@ func TestModel_ToggleResetsCursor(t *testing.T) {
 	if m.cursor != 1 {
 		t.Fatalf("expected cursor at 1, got %d", m.cursor)
 	}
-	m = sendKey(m, 's') // toggle
+	m = sendKey(m, 'a') // toggle
 	if m.cursor != 0 {
 		t.Fatalf("expected cursor reset to 0 after toggle, got %d", m.cursor)
 	}
 }
 
-func TestModel_AuthorToggle(t *testing.T) {
+func TestModel_ToggleAssignedWithA(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.rawPRs[0].ReviewRequests.Nodes = []ReviewRequestNode{
+		{RequestedReviewer: struct {
+			Login string `json:"login"`
+			Slug  string `json:"slug"`
+		}{Login: "me"}},
+	}
+	m := newModel(cfg)
+
+	// 'a' toggles assigned filter
+	m = sendKey(m, 'a')
+	if !m.showAssigned {
+		t.Fatal("expected showAssigned true after 'a'")
+	}
+	if len(m.visibleItems()) != 1 {
+		t.Fatalf("expected 1 item with assigned filter, got %d", len(m.visibleItems()))
+	}
+
+	m = sendKey(m, 'a')
+	if m.showAssigned {
+		t.Fatal("expected showAssigned false after second 'a'")
+	}
+}
+
+func TestModel_FocusRepo(t *testing.T) {
+	cfg := testModelConfig()
+	cfg.rawPRs[0].Repository.Name = "repo-a"
+	cfg.rawPRs[1].Repository.Name = "repo-b"
+	cfg.rawPRs[2].Repository.Name = "repo-a"
+	m := newModel(cfg)
+
+	// Focus on repo of selected PR
+	m = sendKey(m, 'f')
+	if m.focusRepo == "" {
+		t.Fatal("expected focusRepo to be set")
+	}
+	vis := m.visibleItems()
+	for _, pr := range vis {
+		if pr.RepoName != m.focusRepo {
+			t.Fatalf("expected all visible PRs from %s, got %s", m.focusRepo, pr.RepoName)
+		}
+	}
+
+	// Press f again to clear focus
+	m = sendKey(m, 'f')
+	if m.focusRepo != "" {
+		t.Fatal("expected focusRepo cleared on second press")
+	}
+}
+
+func TestModel_FocusAuthor(t *testing.T) {
 	cfg := testModelConfig()
 	m := newModel(cfg)
-	initialCount := len(m.visibleItems())
+	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
 
-	// Toggle author mode
-	m = sendKey(m, 'a')
-	if !m.showAuthor {
-		t.Fatal("expected showAuthor true")
+	// Focus on author of selected PR
+	m = sendKey(m, 'F')
+	if m.focusAuthor == "" {
+		t.Fatal("expected focusAuthor to be set")
 	}
-	// Author mode: only "me" PR visible
-	if len(m.visibleItems()) != 1 {
-		t.Fatalf("expected 1 item in author mode, got %d", len(m.visibleItems()))
+	vis := m.visibleItems()
+	for _, pr := range vis {
+		if pr.Author != m.focusAuthor {
+			t.Fatalf("expected all visible PRs by %s, got %s", m.focusAuthor, pr.Author)
+		}
 	}
 
-	// Toggle back
-	m = sendKey(m, 'a')
-	if m.showAuthor {
-		t.Fatal("expected showAuthor false")
-	}
-	if len(m.visibleItems()) != initialCount {
-		t.Fatalf("expected %d items back in reviewer mode, got %d", initialCount, len(m.visibleItems()))
+	// Esc clears focus
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.focusAuthor != "" {
+		t.Fatal("expected focusAuthor cleared on Esc")
 	}
 }
 
-func TestModel_AuthorModeDisablesSF(t *testing.T) {
+func TestModel_UndoDismissals(t *testing.T) {
 	m := newModel(testModelConfig())
-	m = sendKey(m, 'a') // enter author mode
-	m = sendKey(m, 's') // should be ignored
-	if m.showAuthored {
-		t.Fatal("s should be ignored in author mode")
-	}
-	m = sendKey(m, 'f') // should be ignored
-	if m.showAssigned {
-		t.Fatal("f should be ignored in author mode")
-	}
-}
-
-func TestModel_HelpBarShowsAuthorToggle(t *testing.T) {
-	m := sendMsg(newModel(testModelConfig()), tea.WindowSizeMsg{Width: 120, Height: 20})
-	view := m.View()
-	if !strings.Contains(view, "a:") {
-		t.Error("expected help bar to show 'a:' key")
-	}
-	if !strings.Contains(view, "author:off") {
-		t.Error("expected author:off in help bar")
+	m = sendKey(m, 'd') // dismiss first PR
+	if len(m.dismissed) != 1 {
+		t.Fatal("expected 1 dismissal")
 	}
 
-	m = sendKey(m, 'a')
-	view = m.View()
-	if !strings.Contains(view, "author:on") {
-		t.Error("expected author:on in help bar")
+	m = sendKey(m, 'R') // reset all filters
+	if len(m.dismissed) != 0 {
+		t.Fatal("expected dismissals cleared")
+	}
+	if m.statusMsg != "Reset all filters" {
+		t.Errorf("expected status message, got %q", m.statusMsg)
 	}
 }
 
@@ -485,7 +494,7 @@ func TestModel_StaleFetchIgnored(t *testing.T) {
 
 func TestFormatIndicators_ReviewerMode(t *testing.T) {
 	pr := ClassifiedPR{MyReview: MyNone, OthReview: OthApproved, Activity: ActMine}
-	result := formatIndicators(pr, false, nil)
+	result := formatIndicators(pr, nil)
 	if result == "" {
 		t.Fatal("expected non-empty indicator string")
 	}
@@ -533,20 +542,51 @@ func TestModel_HelpBarShowsLegendKey(t *testing.T) {
 	}
 }
 
-func TestModel_ClaudeComment(t *testing.T) {
+func TestModel_ClaudeCommentConfirmation(t *testing.T) {
 	cfg := testModelConfig()
 	cfg.org = "testorg"
 	m := newModel(cfg)
 	m = sendMsg(m, tea.WindowSizeMsg{Width: 120, Height: 20})
 
-	// Press c — should set status message and return a command
+	// First c — should ask for confirmation
+	m = sendKey(m, 'c')
+	if !m.confirmingComment {
+		t.Fatal("expected confirmingComment=true after first c")
+	}
+	if !strings.Contains(m.statusMsg, "Press c to confirm") {
+		t.Errorf("expected confirmation prompt, got %q", m.statusMsg)
+	}
+
+	// Second c — should post comment
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	m2 := updated.(model)
+	if m2.confirmingComment {
+		t.Fatal("expected confirmingComment=false after confirm")
+	}
 	if !strings.Contains(m2.statusMsg, "Commenting on") {
-		t.Errorf("expected status message about commenting, got %q", m2.statusMsg)
+		t.Errorf("expected commenting status, got %q", m2.statusMsg)
 	}
 	if cmd == nil {
-		t.Fatal("expected non-nil command from c key")
+		t.Fatal("expected non-nil command from confirmed c key")
+	}
+}
+
+func TestModel_ClaudeCommentCancel(t *testing.T) {
+	m := newModel(testModelConfig())
+
+	// First c — confirm prompt
+	m = sendKey(m, 'c')
+	if !m.confirmingComment {
+		t.Fatal("expected confirmingComment=true")
+	}
+
+	// Press something else — should cancel
+	m = sendKey(m, 'j')
+	if m.confirmingComment {
+		t.Fatal("expected confirmingComment=false after cancel")
+	}
+	if m.statusMsg != "Cancelled" {
+		t.Errorf("expected Cancelled status, got %q", m.statusMsg)
 	}
 }
 
@@ -583,9 +623,9 @@ func TestModel_HelpBarShowsClaudeKey(t *testing.T) {
 	}
 }
 
-func TestFormatIndicators_AuthorMode(t *testing.T) {
+func TestFormatIndicators_DraftMode(t *testing.T) {
 	pr := ClassifiedPR{IsDraft: true, OthReview: OthNone, Activity: ActNone}
-	result := formatIndicators(pr, true, nil)
+	result := formatIndicators(pr, nil)
 	if result == "" {
 		t.Fatal("expected non-empty indicator string")
 	}
@@ -661,5 +701,53 @@ func TestModel_LoadingViewWithItems(t *testing.T) {
 	}
 	if !strings.Contains(view, "42 found") {
 		t.Error("expected loading count in view")
+	}
+}
+
+func TestModel_Search(t *testing.T) {
+	m := newModel(testModelConfig())
+	if len(m.visibleItems()) != 4 {
+		t.Fatalf("expected 4 items initially, got %d", len(m.visibleItems()))
+	}
+
+	// Enter search mode
+	m = sendKey(m, '/')
+	if !m.searching {
+		t.Fatal("expected searching=true after /")
+	}
+
+	// Type "alice"
+	for _, r := range "alice" {
+		m = sendMsg(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.searchQuery != "alice" {
+		t.Fatalf("expected searchQuery='alice', got %q", m.searchQuery)
+	}
+	if len(m.visibleItems()) != 1 {
+		t.Fatalf("expected 1 item matching 'alice', got %d", len(m.visibleItems()))
+	}
+
+	// Press enter to keep filter
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.searching {
+		t.Fatal("expected searching=false after enter")
+	}
+	if m.searchQuery != "alice" {
+		t.Fatal("expected search query preserved after enter")
+	}
+	if len(m.visibleItems()) != 1 {
+		t.Fatal("expected filter still active after enter")
+	}
+
+	// Press / again and Esc to clear
+	m = sendKey(m, '/')
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.searchQuery != "" {
+		t.Fatal("expected search query cleared after Esc")
+	}
+	if len(m.visibleItems()) != 4 {
+		t.Fatal("expected all items visible after clearing search")
 	}
 }

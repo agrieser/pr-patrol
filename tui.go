@@ -69,10 +69,10 @@ type model struct {
 	me      string
 	myTeams map[string]bool
 
-	showAuthored   bool
-	showAssigned   bool
-	showAuthor bool
-	sortMode   SortMode
+	showAssigned bool
+	sortMode     SortMode
+	focusRepo    string
+	focusAuthor  string
 
 	loading      bool
 	loadingCount int
@@ -83,16 +83,19 @@ type model struct {
 	errMsg       string
 	showHelp     bool
 	statusMsg    string
+
+	confirmingComment bool // awaiting second 'c' to confirm @claude comment
+
+	searching    bool   // search mode active (entered via '/')
+	searchQuery  string // current search filter text
 }
 
 type modelConfig struct {
 	rawPRs         []PRNode
 	me             string
 	myTeams        map[string]bool
-	showAuthored   bool
-	showAssigned   bool
-	showAuthor     bool
-	sortMode       SortMode
+	showAssigned bool
+	sortMode     SortMode
 	loading        bool
 	org            string
 	limit          int
@@ -238,10 +241,8 @@ func newModel(cfg modelConfig) model {
 		rawPRs:     cfg.rawPRs,
 		me:         cfg.me,
 		myTeams:    cfg.myTeams,
-		showAuthored:   cfg.showAuthored,
-		showAssigned:   cfg.showAssigned,
-		showAuthor: cfg.showAuthor,
-		sortMode:   cfg.sortMode,
+		showAssigned: cfg.showAssigned,
+		sortMode:     cfg.sortMode,
 		loading:    cfg.loading,
 		org:        cfg.org,
 		limit:      cfg.limit,
@@ -253,18 +254,14 @@ func newModel(cfg modelConfig) model {
 }
 
 func (m *model) reclassify() {
-	if m.showAuthor {
-		m.items = classifyAllAuthor(m.rawPRs, m.me, m.sortMode)
-	} else {
-		var filter func(PRNode) bool
-		if m.showAssigned {
-			me, teams := m.me, m.myTeams
-			filter = func(pr PRNode) bool {
-				return isRequestedReviewer(pr, me, teams)
-			}
+	var filter func(PRNode) bool
+	if m.showAssigned {
+		me, teams := m.me, m.myTeams
+		filter = func(pr PRNode) bool {
+			return isRequestedReviewer(pr, me, teams)
 		}
-		m.items = classifyAll(m.rawPRs, m.me, m.showAuthored, filter, m.sortMode)
 	}
+	m.items = classifyAll(m.rawPRs, m.me, filter, m.sortMode)
 	m.cols = computeColumns(m.items)
 }
 
@@ -319,6 +316,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyMsg:
 		m.statusMsg = "" // clear status on any keypress
+
+		// Search mode: capture text input
+		if m.searching {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.searching = false
+				m.searchQuery = ""
+				m.cursor = 0
+				return m, nil
+			case tea.KeyEnter:
+				m.searching = false
+				m.cursor = 0
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+					m.cursor = 0
+				}
+				return m, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					m.searchQuery += string(msg.Runes)
+					m.cursor = 0
+				}
+				return m, nil
+			}
+		}
+
+		// Confirmation mode: second 'c' confirms, anything else cancels
+		if m.confirmingComment {
+			m.confirmingComment = false
+			if msg.String() == "c" {
+				if pr, ok := m.selectedPR(); ok {
+					m.statusMsg = fmt.Sprintf("Commenting on %s#%d...", pr.RepoName, pr.Number)
+					return m, postCommentCmd(pr.RepoFullName, pr.Number, "@claude please review this PR")
+				}
+			} else {
+				m.statusMsg = "Cancelled"
+			}
+			return m, nil
+		}
+
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -343,22 +382,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = openBrowser(pr.URL)
 			}
 		case "a":
-			m.showAuthor = !m.showAuthor
+			m.showAssigned = !m.showAssigned
 			m.reclassify()
 			m.cursor = 0
-		case "s":
-			if !m.showAuthor {
-				m.showAuthored = !m.showAuthored
-				m.reclassify()
-				m.cursor = 0
-			}
 		case "f":
-			if !m.showAuthor {
-				m.showAssigned = !m.showAssigned
-				m.reclassify()
+			if pr, ok := m.selectedPR(); ok && m.focusRepo == pr.RepoName {
+				m.focusRepo = ""
+				m.statusMsg = ""
+			} else if ok {
+				m.focusRepo = pr.RepoName
+				m.focusAuthor = ""
+				m.statusMsg = fmt.Sprintf("Focus: repo %s", pr.RepoName)
+			}
+			m.cursor = 0
+		case "F":
+			if pr, ok := m.selectedPR(); ok && m.focusAuthor == pr.Author {
+				m.focusAuthor = ""
+				m.statusMsg = ""
+			} else if ok {
+				m.focusAuthor = pr.Author
+				m.focusRepo = ""
+				m.statusMsg = fmt.Sprintf("Focus: author %s", pr.Author)
+			}
+			m.cursor = 0
+		case "R":
+			m.dismissed = make(map[string]bool)
+			m.dismissedRepos = make(map[string]bool)
+			m.dismissedAuthors = make(map[string]bool)
+			m.focusRepo = ""
+			m.focusAuthor = ""
+			m.searchQuery = ""
+			m.statusMsg = "Reset all filters"
+			m.cursor = 0
+		case "esc":
+			if m.searchQuery != "" {
+				m.searchQuery = ""
+				m.cursor = 0
+			} else if m.focusRepo != "" || m.focusAuthor != "" {
+				m.focusRepo = ""
+				m.focusAuthor = ""
+				m.statusMsg = ""
 				m.cursor = 0
 			}
-		case "o":
+		case "s":
 			if m.sortMode == SortDate {
 				m.sortMode = SortPriority
 			} else {
@@ -403,9 +469,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			if pr, ok := m.selectedPR(); ok {
-				m.statusMsg = fmt.Sprintf("Commenting on %s#%d...", pr.RepoName, pr.Number)
-				return m, postCommentCmd(pr.RepoFullName, pr.Number, "@claude please review this PR")
+				m.confirmingComment = true
+				m.statusMsg = fmt.Sprintf("Post @claude review on %s#%d? Press c to confirm", pr.RepoName, pr.Number)
 			}
+		case "/":
+			m.searching = true
+			m.searchQuery = ""
+			m.cursor = 0
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -429,10 +499,7 @@ func (m model) View() string {
 
 	vis := m.visibleItems()
 	if len(vis) == 0 && !m.loading {
-		if m.showAuthor {
-			return "No open PRs authored by you. Press a to switch to reviewer mode.\n"
-		}
-		return "No PRs match current filters. Press s/f to adjust, or a for author mode.\n"
+		return "No PRs match current filters. Press R to reset, Esc to clear focus.\n"
 	}
 
 	var b strings.Builder
@@ -445,9 +512,6 @@ func (m model) View() string {
 
 	// Header
 	header := "👤 👥 💬"
-	if m.showAuthor {
-		header = "📝 👥 💬"
-	}
 	// Pad to align age label over the age column
 	ageLabel := "age"
 	if m.sortMode == SortDate {
@@ -481,7 +545,7 @@ func (m model) View() string {
 			bg = &selBg
 		}
 
-		indicators := formatIndicators(pr, m.showAuthor, bg)
+		indicators := formatIndicators(pr, bg)
 		repoCol := fmt.Sprintf("%-*s", m.cols.repo, fmt.Sprintf("%s#%d", pr.RepoName, pr.Number))
 		authorCol := fmt.Sprintf("%-*s", m.cols.author, pr.Author)
 		ageTime := pr.CreatedAt
@@ -553,36 +617,33 @@ func (m model) View() string {
 	}
 
 	// Help bar
-	authorLabel := "author:off"
-	if m.showAuthor {
-		authorLabel = "author:on"
-	}
 	sortLabel := "sort:priority"
 	if m.sortMode == SortDate {
 		sortLabel = "sort:date"
 	}
-
-	var help string
-	if m.showAuthor {
-		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d/D/A: dismiss PR/repo/author  c: @claude  o: %s  a: %s  r: refresh  ?: legend  q: quit",
-			sortLabel, authorLabel,
-		))
-	} else {
-		authoredLabel := "authored:off"
-		if m.showAuthored {
-			authoredLabel = "authored:on"
-		}
-		assignedLabel := "assigned:off"
-		if m.showAssigned {
-			assignedLabel = "assigned:on"
-		}
-		help = helpStyle.Render(fmt.Sprintf(
-			"j/k: navigate  enter: open  d/D/A: dismiss PR/repo/author  c: @claude  s: %s  f: %s  o: %s  a: %s  r: refresh  ?: legend  q: quit",
-			authoredLabel, assignedLabel, sortLabel, authorLabel,
-		))
+	assignedLabel := "assigned:off"
+	if m.showAssigned {
+		assignedLabel = "assigned:on"
 	}
-	if m.loading {
+	focusLabel := "focus:off"
+	if m.focusRepo != "" {
+		focusLabel = "focus:" + m.focusRepo
+	} else if m.focusAuthor != "" {
+		focusLabel = "focus:" + m.focusAuthor
+	}
+	searchLabel := "search"
+	if m.searchQuery != "" && !m.searching {
+		searchLabel = "search:" + m.searchQuery
+	}
+	help := helpStyle.Render(fmt.Sprintf(
+		"j/k: navigate  enter: open  d/D/A: dismiss  f/F: %s  /: %s  a: %s  s: %s  c: @claude  r/R: refresh/reset  ?: legend  q: quit",
+		focusLabel, searchLabel, assignedLabel, sortLabel,
+	))
+	if m.searching {
+		b.WriteString(styleCyan.Render("/") + m.searchQuery + styleCyan.Render("▎"))
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("enter: keep filter  esc: clear  type to search"))
+	} else if m.loading {
 		spin := styleCyan.Render(spinnerFrames[m.spinnerFrame])
 		var loadText string
 		if m.loadingCount > 0 {
@@ -592,13 +653,15 @@ func (m model) View() string {
 		}
 		b.WriteString(fmt.Sprintf("%s %s", spin, helpStyle.Render(loadText)))
 		b.WriteString("\n")
+		b.WriteString(help)
 	} else if m.statusMsg != "" {
 		b.WriteString(styleCyan.Render(m.statusMsg))
 		b.WriteString("\n")
+		b.WriteString(help)
 	} else {
 		b.WriteString("\n")
+		b.WriteString(help)
 	}
-	b.WriteString(help)
 
 	return b.String()
 }
@@ -630,11 +693,14 @@ func (m model) renderLegend() string {
 	b.WriteString("  d       Dismiss current PR (hide it)\n")
 	b.WriteString("  D       Dismiss entire repo\n")
 	b.WriteString("  A       Dismiss author (e.g. dependabot)\n")
-	b.WriteString("  s       Toggle showing PRs you authored\n")
-	b.WriteString("  f       Toggle showing only PRs assigned to you\n")
-	b.WriteString("  a       Toggle author mode (your PRs + their review status)\n")
-	b.WriteString("  o       Toggle sort: priority vs date\n")
-	b.WriteString("  c       Post @claude review comment on current PR\n")
+	b.WriteString("  R       Reset all filters (dismissals, focus, search)\n")
+	b.WriteString("  f       Focus on repo of selected PR (toggle)\n")
+	b.WriteString("  F       Focus on author of selected PR (toggle)\n")
+	b.WriteString("  Esc     Clear focus / cancel search\n")
+	b.WriteString("  /       Search by title, repo, or author\n")
+	b.WriteString("  a       Toggle showing only PRs assigned to you\n")
+	b.WriteString("  s       Toggle sort: priority vs date\n")
+	b.WriteString("  c       Post @claude review comment (press twice to confirm)\n")
 	b.WriteString("  r       Refresh data from GitHub\n")
 	b.WriteString("  q       Quit\n")
 	b.WriteString("\n")
@@ -647,6 +713,20 @@ func (m model) visibleItems() []ClassifiedPR {
 	for _, pr := range m.items {
 		if m.dismissed[pr.URL] || m.dismissedRepos[pr.RepoName] || m.dismissedAuthors[pr.Author] {
 			continue
+		}
+		if m.focusRepo != "" && pr.RepoName != m.focusRepo {
+			continue
+		}
+		if m.focusAuthor != "" && pr.Author != m.focusAuthor {
+			continue
+		}
+		if m.searchQuery != "" {
+			q := strings.ToLower(m.searchQuery)
+			if !strings.Contains(strings.ToLower(pr.Title), q) &&
+				!strings.Contains(strings.ToLower(pr.RepoName), q) &&
+				!strings.Contains(strings.ToLower(pr.Author), q) {
+				continue
+			}
 		}
 		vis = append(vis, pr)
 	}
@@ -668,11 +748,11 @@ func withBg(s lipgloss.Style, bg *lipgloss.Style) lipgloss.Style {
 	return s
 }
 
-func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) string {
+func formatIndicators(pr ClassifiedPR, bg *lipgloss.Style) string {
 	var col1, col2, col3 string
 
-	// Draft PRs (non-author mode): dim all indicators
-	if pr.IsDraft && !authorMode {
+	// Draft PRs: dim all indicators
+	if pr.IsDraft {
 		col1 = withBg(styleDim, bg).Render("·")
 		col2 = withBg(styleDim, bg).Render("·")
 		col3 = withBg(styleDim, bg).Render("·")
@@ -683,31 +763,23 @@ func formatIndicators(pr ClassifiedPR, authorMode bool, bg *lipgloss.Style) stri
 		return col1 + sep + col2 + sep + col3
 	}
 
-	if authorMode {
-		if pr.IsDraft {
-			col1 = withBg(styleDim, bg).Render("○")
-		} else {
-			col1 = withBg(styleWhite, bg).Render("●")
-		}
-	} else {
-		switch pr.MyReview {
-		case MyNone:
-			col1 = withBg(styleDim, bg).Render("·")
-		case MyApproved:
-			col1 = withBg(styleGreen, bg).Render("✓")
-		case MyChanges:
-			col1 = withBg(styleRed, bg).Render("✗")
-		case MyCommented:
-			col1 = withBg(styleYellow, bg).Render("◆")
-		case MyApprovedStale:
-			col1 = withBg(styleDim, bg).Render("✓")
-		case MyChangesStale:
-			col1 = withBg(styleDim, bg).Render("✗")
-		case MyCommentedStale:
-			col1 = withBg(styleDim, bg).Render("◆")
-		default:
-			col1 = withBg(styleDim, bg).Render("·")
-		}
+	switch pr.MyReview {
+	case MyNone:
+		col1 = withBg(styleDim, bg).Render("·")
+	case MyApproved:
+		col1 = withBg(styleGreen, bg).Render("✓")
+	case MyChanges:
+		col1 = withBg(styleRed, bg).Render("✗")
+	case MyCommented:
+		col1 = withBg(styleYellow, bg).Render("◆")
+	case MyApprovedStale:
+		col1 = withBg(styleDim, bg).Render("✓")
+	case MyChangesStale:
+		col1 = withBg(styleDim, bg).Render("✗")
+	case MyCommentedStale:
+		col1 = withBg(styleDim, bg).Render("◆")
+	default:
+		col1 = withBg(styleDim, bg).Render("·")
 	}
 
 	switch pr.OthReview {

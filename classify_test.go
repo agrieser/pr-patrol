@@ -475,7 +475,7 @@ func TestClassifyAll_BasicIndicators(t *testing.T) {
 			withURL("https://github.com/org/repo/pull/2"),
 		),
 	}
-	result := classifyAll(prs, "me", false, nil, SortPriority)
+	result := classifyAll(prs, "me", nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -498,25 +498,23 @@ func TestClassifyAll_BasicIndicators(t *testing.T) {
 	}
 }
 
-func TestClassifyAll_ExcludesSelf(t *testing.T) {
+func TestClassifyAll_IncludesSelfWithIsAuthor(t *testing.T) {
 	prs := []PRNode{
 		makePR(withAuthor("me")),
 		makePR(withAuthor("other")),
 	}
-	result := classifyAll(prs, "me", false, nil, SortPriority)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 PR, got %d", len(result))
-	}
-}
-
-func TestClassifyAll_IncludesSelf(t *testing.T) {
-	prs := []PRNode{
-		makePR(withAuthor("me")),
-		makePR(withAuthor("other")),
-	}
-	result := classifyAll(prs, "me", true, nil, SortPriority)
+	result := classifyAll(prs, "me", nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
+	}
+	// Verify IsAuthor flag is set correctly
+	for _, pr := range result {
+		if pr.Author == "me" && !pr.IsAuthor {
+			t.Error("expected IsAuthor=true for self-authored PR")
+		}
+		if pr.Author == "other" && pr.IsAuthor {
+			t.Error("expected IsAuthor=false for other's PR")
+		}
 	}
 }
 
@@ -528,7 +526,7 @@ func TestClassifyAll_WithFilter(t *testing.T) {
 	filter := func(pr PRNode) bool {
 		return isRequestedReviewer(pr, "me", nil)
 	}
-	result := classifyAll(prs, "me", false, filter, SortPriority)
+	result := classifyAll(prs, "me", filter, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR, got %d", len(result))
 	}
@@ -557,7 +555,7 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 			withURL("https://github.com/org/repo/pull/3"),
 		),
 	}
-	result := classifyAll(prs, "me", false, nil, SortPriority)
+	result := classifyAll(prs, "me", nil, SortPriority)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 PRs, got %d", len(result))
 	}
@@ -575,7 +573,7 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 func TestClassifyAll_DraftField(t *testing.T) {
 	pr := makePR(withAuthor("alice"))
 	pr.IsDraft = true
-	result := classifyAll([]PRNode{pr}, "me", false, nil, SortPriority)
+	result := classifyAll([]PRNode{pr}, "me", nil, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR, got %d", len(result))
 	}
@@ -589,7 +587,7 @@ func TestClassifyAll_DraftsSortLast(t *testing.T) {
 	draft.IsDraft = true
 	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
 
-	result := classifyAll([]PRNode{draft, normal}, "me", false, nil, SortPriority)
+	result := classifyAll([]PRNode{draft, normal}, "me", nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -607,7 +605,7 @@ func TestClassifyAll_DraftsSortLastDateMode(t *testing.T) {
 	draft.CreatedAt = time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC) // newer
 	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
 
-	result := classifyAll([]PRNode{draft, normal}, "me", false, nil, SortDate)
+	result := classifyAll([]PRNode{draft, normal}, "me", nil, SortDate)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -626,7 +624,7 @@ func TestClassifyAll_IncludesApproved(t *testing.T) {
 			withLastCommit(commitBefore),
 		),
 	}
-	result := classifyAll(prs, "me", false, nil, SortPriority)
+	result := classifyAll(prs, "me", nil, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR (approved PRs no longer hidden), got %d", len(result))
 	}
@@ -718,7 +716,7 @@ func TestClassifyAll_SortByDate(t *testing.T) {
 		makePR(withAuthor("bob"), withLastCommit(recent), withURL("https://github.com/org/repo/pull/2")),
 		makePR(withAuthor("carol"), withLastCommit(mid), withURL("https://github.com/org/repo/pull/3")),
 	}
-	result := classifyAll(prs, "me", false, nil, SortDate)
+	result := classifyAll(prs, "me", nil, SortDate)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 PRs, got %d", len(result))
 	}

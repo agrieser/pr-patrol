@@ -48,6 +48,7 @@ type ClassifiedPR struct {
 	OthReview    OthReviewIndicator
 	Activity     ActivityIndicator
 	IsDraft      bool
+	IsAuthor     bool
 	RepoName     string
 	RepoFullName string
 	Number       int
@@ -240,6 +241,10 @@ func isRequestedReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
 }
 
 func sortPriority(pr ClassifiedPR) int {
+	// Self-authored PRs: sort below items needing review, above completed reviews
+	if pr.IsAuthor {
+		return 5
+	}
 	switch pr.MyReview {
 	case MyApprovedStale, MyChangesStale, MyCommentedStale, MyCommented:
 		return 0
@@ -253,15 +258,12 @@ func sortPriority(pr ClassifiedPR) int {
 	case MyApproved:
 		return 4
 	}
-	return 5
+	return 6
 }
 
-func classifyAll(prs []PRNode, me string, includeSelf bool, filter func(PRNode) bool, sortMode SortMode) []ClassifiedPR {
+func classifyAll(prs []PRNode, me string, filter func(PRNode) bool, sortMode SortMode) []ClassifiedPR {
 	var result []ClassifiedPR
 	for _, pr := range prs {
-		if !includeSelf && pr.Author.Login == me {
-			continue
-		}
 		if filter != nil && !filter(pr) {
 			continue
 		}
@@ -270,6 +272,7 @@ func classifyAll(prs []PRNode, me string, includeSelf bool, filter func(PRNode) 
 			OthReview:    computeOthReview(pr, me),
 			Activity:     computeActivity(pr, me),
 			IsDraft:      pr.IsDraft,
+			IsAuthor:     pr.Author.Login == me,
 			RepoName:     pr.Repository.Name,
 			RepoFullName: pr.Repository.NameWithOwner,
 			Number:       pr.Number,

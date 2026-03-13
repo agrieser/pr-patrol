@@ -105,18 +105,18 @@ func main() {
 			return
 		}
 
+		myTeams, err := fetchUserTeams(*org)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not fetch team memberships: %v\n", err)
+			myTeams = make(map[string]bool)
+		}
 		var filter func(PRNode) bool
 		if *mine {
-			myTeams, err := fetchUserTeams(*org)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not fetch team memberships: %v\n", err)
-				myTeams = make(map[string]bool)
-			}
 			filter = func(pr PRNode) bool {
 				return isRequestedReviewer(pr, me, myTeams)
 			}
 		}
-		classified := classifyAll(prs, me, filter, SortPriority)
+		classified := classifyAll(prs, me, myTeams, filter, SortPriority)
 		classified = filterDismissedRepos(classified, dismissedRepoSet)
 		if len(classified) == 0 {
 			fmt.Fprintln(os.Stderr, "No PRs pending your review.")

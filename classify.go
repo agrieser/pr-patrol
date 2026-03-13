@@ -47,8 +47,9 @@ type ClassifiedPR struct {
 	MyReview     MyReviewIndicator
 	OthReview    OthReviewIndicator
 	Activity     ActivityIndicator
-	IsDraft      bool
-	IsAuthor     bool
+	IsDraft     bool
+	IsAuthor    bool
+	IsCodeOwner bool
 	RepoName     string
 	RepoFullName string
 	Number       int
@@ -240,28 +241,43 @@ func isRequestedReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
 	return false
 }
 
-func sortPriority(pr ClassifiedPR) int {
-	// Self-authored PRs: sort below items needing review, above completed reviews
-	if pr.IsAuthor {
-		return 5
-	}
-	switch pr.MyReview {
-	case MyApprovedStale, MyChangesStale, MyCommentedStale, MyCommented:
-		return 0
-	case MyNone:
-		if pr.OthReview == OthNone {
-			return 1
+func isCodeOwnerReviewer(pr PRNode, me string, myTeams map[string]bool) bool {
+	for _, rr := range pr.ReviewRequests.Nodes {
+		if !rr.AsCodeOwner {
+			continue
 		}
-		return 2
-	case MyChanges:
-		return 3
-	case MyApproved:
-		return 4
+		if rr.RequestedReviewer.Login == me {
+			return true
+		}
+		if rr.RequestedReviewer.Slug != "" && myTeams[rr.RequestedReviewer.Slug] {
+			return true
+		}
 	}
-	return 6
+	return false
 }
 
-func classifyAll(prs []PRNode, me string, filter func(PRNode) bool, sortMode SortMode) []ClassifiedPR {
+func sortPriority(pr ClassifiedPR) int {
+	// 0: Unreviewed codeowner PRs — you own this code
+	if pr.MyReview == MyNone && pr.IsCodeOwner {
+		return 0
+	}
+	// 1: I requested changes (including stale)
+	if pr.MyReview == MyChanges || pr.MyReview == MyChangesStale {
+		return 1
+	}
+	// 2: I left a comment review (including stale)
+	if pr.MyReview == MyCommented || pr.MyReview == MyCommentedStale {
+		return 2
+	}
+	// 3: Stale approvals — new commits since I approved
+	if pr.MyReview == MyApprovedStale {
+		return 3
+	}
+	// 4: Everything else (sorted by date within this bucket)
+	return 4
+}
+
+func classifyAll(prs []PRNode, me string, myTeams map[string]bool, filter func(PRNode) bool, sortMode SortMode) []ClassifiedPR {
 	var result []ClassifiedPR
 	for _, pr := range prs {
 		if filter != nil && !filter(pr) {
@@ -273,6 +289,7 @@ func classifyAll(prs []PRNode, me string, filter func(PRNode) bool, sortMode Sor
 			Activity:     computeActivity(pr, me),
 			IsDraft:      pr.IsDraft,
 			IsAuthor:     pr.Author.Login == me,
+			IsCodeOwner:  isCodeOwnerReviewer(pr, me, myTeams),
 			RepoName:     pr.Repository.Name,
 			RepoFullName: pr.Repository.NameWithOwner,
 			Number:       pr.Number,
@@ -320,7 +337,7 @@ func sortWithDraftsLast(result []ClassifiedPR, sortMode SortMode, priorityFn fun
 			if pi != pj {
 				return pi < pj
 			}
-			return result[i].CreatedAt.After(result[j].CreatedAt)
+			return result[i].LastActivity.After(result[j].LastActivity)
 		})
 	}
 }

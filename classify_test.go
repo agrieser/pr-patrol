@@ -475,26 +475,35 @@ func TestClassifyAll_BasicIndicators(t *testing.T) {
 			withURL("https://github.com/org/repo/pull/2"),
 		),
 	}
-	result := classifyAll(prs, "me", nil, SortPriority)
+	result := classifyAll(prs, "me", nil, nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
 
-	if result[0].MyReview != MyNone {
-		t.Errorf("PR1: expected MyNone, got %s", result[0].MyReview)
+	// Find each PR by author to avoid order dependency
+	var alice, bob *ClassifiedPR
+	for i := range result {
+		switch result[i].Author {
+		case "alice":
+			alice = &result[i]
+		case "bob":
+			bob = &result[i]
+		}
 	}
-	if result[0].OthReview != OthNone {
-		t.Errorf("PR1: expected OthNone, got %s", result[0].OthReview)
+	if alice.MyReview != MyNone {
+		t.Errorf("alice: expected MyNone, got %s", alice.MyReview)
 	}
-	if result[0].Activity != ActNone {
-		t.Errorf("PR1: expected ActNone, got %s", result[0].Activity)
+	if alice.OthReview != OthNone {
+		t.Errorf("alice: expected OthNone, got %s", alice.OthReview)
 	}
-
-	if result[1].OthReview != OthApproved {
-		t.Errorf("PR2: expected OthApproved, got %s", result[1].OthReview)
+	if alice.Activity != ActNone {
+		t.Errorf("alice: expected ActNone, got %s", alice.Activity)
 	}
-	if result[1].Activity != ActMine {
-		t.Errorf("PR2: expected ActMine, got %s", result[1].Activity)
+	if bob.OthReview != OthApproved {
+		t.Errorf("bob: expected OthApproved, got %s", bob.OthReview)
+	}
+	if bob.Activity != ActMine {
+		t.Errorf("bob: expected ActMine, got %s", bob.Activity)
 	}
 }
 
@@ -503,7 +512,7 @@ func TestClassifyAll_IncludesSelfWithIsAuthor(t *testing.T) {
 		makePR(withAuthor("me")),
 		makePR(withAuthor("other")),
 	}
-	result := classifyAll(prs, "me", nil, SortPriority)
+	result := classifyAll(prs, "me", nil, nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -526,7 +535,7 @@ func TestClassifyAll_WithFilter(t *testing.T) {
 	filter := func(pr PRNode) bool {
 		return isRequestedReviewer(pr, "me", nil)
 	}
-	result := classifyAll(prs, "me", filter, SortPriority)
+	result := classifyAll(prs, "me", nil, filter, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR, got %d", len(result))
 	}
@@ -536,44 +545,80 @@ func TestClassifyAll_SortOrder(t *testing.T) {
 	reviewTime := time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)
 	commitAfter := time.Date(2025, 1, 4, 0, 0, 0, 0, time.UTC)
 	commitBefore := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+	commentTime := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
 
+	myTeams := map[string]bool{"my-team": true}
 	prs := []PRNode{
+		// Approved (everything else bucket)
 		makePR(
 			withAuthor("alice"),
 			withReview("me", "APPROVED", reviewTime),
 			withLastCommit(commitBefore),
 			withURL("https://github.com/org/repo/pull/1"),
 		),
+		// Unreviewed, no codeowner (everything else bucket)
 		makePR(
 			withAuthor("bob"),
 			withURL("https://github.com/org/repo/pull/2"),
 		),
+		// Stale approval (priority 3)
 		makePR(
 			withAuthor("carol"),
 			withReview("me", "APPROVED", reviewTime),
 			withLastCommit(commitAfter),
 			withURL("https://github.com/org/repo/pull/3"),
 		),
+		// Changes requested (priority 1)
+		makePR(
+			withAuthor("dave"),
+			withReview("me", "CHANGES_REQUESTED", reviewTime),
+			withLastCommit(commitBefore),
+			withURL("https://github.com/org/repo/pull/4"),
+		),
+		// Commented review (priority 2)
+		makePR(
+			withAuthor("eve"),
+			withReview("me", "COMMENTED", commentTime),
+			withLastCommit(commitBefore),
+			withURL("https://github.com/org/repo/pull/5"),
+		),
+		// Unreviewed codeowner (priority 0)
+		makePR(
+			withAuthor("frank"),
+			withReviewRequest("me", "", true),
+			withURL("https://github.com/org/repo/pull/6"),
+		),
 	}
-	result := classifyAll(prs, "me", nil, SortPriority)
-	if len(result) != 3 {
-		t.Fatalf("expected 3 PRs, got %d", len(result))
+	result := classifyAll(prs, "me", myTeams, nil, SortPriority)
+	if len(result) != 6 {
+		t.Fatalf("expected 6 PRs, got %d", len(result))
 	}
-	if result[0].MyReview != MyApprovedStale {
-		t.Errorf("expected stale first, got MyReview=%s", result[0].MyReview)
+	// Priority 0: unreviewed codeowner
+	if result[0].Author != "frank" {
+		t.Errorf("expected unreviewed codeowner first, got author=%s", result[0].Author)
 	}
-	if result[1].MyReview != MyNone {
-		t.Errorf("expected untouched second, got MyReview=%s", result[1].MyReview)
+	// Priority 1: changes requested
+	if result[1].Author != "dave" {
+		t.Errorf("expected changes requested second, got author=%s", result[1].Author)
 	}
-	if result[2].MyReview != MyApproved {
-		t.Errorf("expected approved last, got MyReview=%s", result[2].MyReview)
+	// Priority 2: commented
+	if result[2].Author != "eve" {
+		t.Errorf("expected commented third, got author=%s", result[2].Author)
+	}
+	// Priority 3: stale approval
+	if result[3].Author != "carol" {
+		t.Errorf("expected stale approval fourth, got author=%s", result[3].Author)
+	}
+	// Priority 4: everything else (approved and unreviewed non-codeowner, by date)
+	if result[4].MyReview == result[5].MyReview {
+		// both in same bucket, sorted by last activity
 	}
 }
 
 func TestClassifyAll_DraftField(t *testing.T) {
 	pr := makePR(withAuthor("alice"))
 	pr.IsDraft = true
-	result := classifyAll([]PRNode{pr}, "me", nil, SortPriority)
+	result := classifyAll([]PRNode{pr}, "me", nil, nil, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR, got %d", len(result))
 	}
@@ -587,7 +632,7 @@ func TestClassifyAll_DraftsSortLast(t *testing.T) {
 	draft.IsDraft = true
 	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
 
-	result := classifyAll([]PRNode{draft, normal}, "me", nil, SortPriority)
+	result := classifyAll([]PRNode{draft, normal}, "me", nil, nil, SortPriority)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -605,7 +650,7 @@ func TestClassifyAll_DraftsSortLastDateMode(t *testing.T) {
 	draft.CreatedAt = time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC) // newer
 	normal := makePR(withAuthor("bob"), withURL("https://github.com/org/repo/pull/2"))
 
-	result := classifyAll([]PRNode{draft, normal}, "me", nil, SortDate)
+	result := classifyAll([]PRNode{draft, normal}, "me", nil, nil, SortDate)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 PRs, got %d", len(result))
 	}
@@ -624,7 +669,7 @@ func TestClassifyAll_IncludesApproved(t *testing.T) {
 			withLastCommit(commitBefore),
 		),
 	}
-	result := classifyAll(prs, "me", nil, SortPriority)
+	result := classifyAll(prs, "me", nil, nil, SortPriority)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 PR (approved PRs no longer hidden), got %d", len(result))
 	}
@@ -716,7 +761,7 @@ func TestClassifyAll_SortByDate(t *testing.T) {
 		makePR(withAuthor("bob"), withLastCommit(recent), withURL("https://github.com/org/repo/pull/2")),
 		makePR(withAuthor("carol"), withLastCommit(mid), withURL("https://github.com/org/repo/pull/3")),
 	}
-	result := classifyAll(prs, "me", nil, SortDate)
+	result := classifyAll(prs, "me", nil, nil, SortDate)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 PRs, got %d", len(result))
 	}

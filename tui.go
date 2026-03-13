@@ -28,8 +28,10 @@ var (
 	styleRed    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleYellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleCyan   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	styleDim    = lipgloss.NewStyle().Faint(true)
+	styleDim  = lipgloss.NewStyle().Faint(true)
+	styleBold = lipgloss.NewStyle().Bold(true)
 	styleWhite  = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	styleOrange = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
 	selBg     = lipgloss.NewStyle().Background(lipgloss.Color("238"))
 	helpStyle = lipgloss.NewStyle().Faint(true)
@@ -261,7 +263,7 @@ func (m *model) reclassify() {
 			return isRequestedReviewer(pr, me, teams)
 		}
 	}
-	m.items = classifyAll(m.rawPRs, m.me, filter, m.sortMode)
+	m.items = classifyAll(m.rawPRs, m.me, m.myTeams, filter, m.sortMode)
 	m.cols = computeColumns(m.items)
 }
 
@@ -568,11 +570,15 @@ func (m model) View() string {
 			}
 		}
 
+		bold := pr.IsCodeOwner && !pr.IsDraft
 		var coloredRepo, coloredAuthor, line string
 		if selected {
 			if pr.IsDraft {
 				coloredRepo = styleDim.Inherit(selBg).Render(repoCol)
 				coloredAuthor = styleDim.Inherit(selBg).Render(authorCol)
+			} else if bold {
+				coloredRepo = nameColor(pr.RepoName).Bold(true).Inherit(selBg).Render(repoCol)
+				coloredAuthor = nameColor(pr.Author).Bold(true).Inherit(selBg).Render(authorCol)
 			} else {
 				coloredRepo = nameColor(pr.RepoName).Inherit(selBg).Render(repoCol)
 				coloredAuthor = nameColor(pr.Author).Inherit(selBg).Render(authorCol)
@@ -582,6 +588,8 @@ func (m model) View() string {
 			var titleRendered string
 			if pr.IsDraft {
 				titleRendered = styleDim.Inherit(selBg).Render(titleText)
+			} else if bold {
+				titleRendered = styleBold.Inherit(selBg).Render(titleText)
 			} else {
 				titleRendered = selBg.Render(titleText)
 			}
@@ -598,6 +606,11 @@ func (m model) View() string {
 			coloredAuthor = styleDim.Render(authorCol)
 			ageRendered := styleDim.Render(ageCol)
 			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, styleDim.Render(titleText))
+		} else if bold {
+			coloredRepo = nameColor(pr.RepoName).Bold(true).Render(repoCol)
+			coloredAuthor = nameColor(pr.Author).Bold(true).Render(authorCol)
+			ageRendered := styleDim.Render(ageCol)
+			line = fmt.Sprintf("%s %s  %s  %s  %s", indicators, coloredRepo, coloredAuthor, ageRendered, styleBold.Render(titleText))
 		} else {
 			coloredRepo = nameColor(pr.RepoName).Render(repoCol)
 			coloredAuthor = nameColor(pr.Author).Render(authorCol)
@@ -673,6 +686,7 @@ func (m model) renderLegend() string {
 	b.WriteString(fmt.Sprintf("  %s  You requested changes\n", styleRed.Render("✗")))
 	b.WriteString(fmt.Sprintf("  %s  You left review comments\n", styleYellow.Render("◆")))
 	b.WriteString(fmt.Sprintf("  %s  No review yet\n", styleDim.Render("·")))
+	b.WriteString(fmt.Sprintf("  %s  Codeowner review needed\n", styleOrange.Render("·")))
 	b.WriteString("  Color: bright = current, gray = stale\n")
 	b.WriteString("\n")
 	b.WriteString("Column 2 — Others' Reviews:\n")
@@ -765,7 +779,11 @@ func formatIndicators(pr ClassifiedPR, bg *lipgloss.Style) string {
 
 	switch pr.MyReview {
 	case MyNone:
-		col1 = withBg(styleDim, bg).Render("·")
+		if pr.IsCodeOwner {
+			col1 = withBg(styleOrange, bg).Render("·")
+		} else {
+			col1 = withBg(styleDim, bg).Render("·")
+		}
 	case MyApproved:
 		col1 = withBg(styleGreen, bg).Render("✓")
 	case MyChanges:
